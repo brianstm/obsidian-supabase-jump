@@ -48,7 +48,7 @@ export class SupabaseManager {
 		} catch {
 			this.setStatus("error");
 			new Notice(
-				"Supabase jump: project url is not a valid url - check your settings",
+				"SupaBase Jump: Project URL is not a valid URL - check your settings",
 			);
 			return;
 		}
@@ -93,7 +93,7 @@ export class SupabaseManager {
 		const { email, password } = this.host.settings;
 		if (!email || !password) {
 			this.setStatus("offline");
-			new Notice("supabase jump: email and password are required");
+			new Notice("SupaBase Jump: Email and password are required");
 			return;
 		}
 
@@ -114,7 +114,7 @@ export class SupabaseManager {
 
 		if (!error) {
 			this.setStatus("synced");
-			new Notice("supabase jump: connected");
+			new Notice("SupaBase Jump: Connected");
 			return;
 		}
 
@@ -159,14 +159,14 @@ export class SupabaseManager {
 			if (!confirmed) {
 				this.setStatus("offline");
 				new Notice(
-					"supabase jump: account created - confirmation email sent\n\n" +
+					"SupaBase Jump: account created - confirmation email sent\n\n" +
 						"click the link in the email, then press connect\n\n" +
 						'tip: disable email confirmation in supabase \u2192 authentication \u2192 providers \u2192 email \u2192 uncheck "Confirm email" to skip this step',
 					12000,
 				);
 			} else {
 				this.setStatus("synced");
-				new Notice("supabase jump: account created and connected");
+				new Notice("SupaBase Jump: Account created and connected");
 			}
 			return;
 		}
@@ -180,7 +180,7 @@ export class SupabaseManager {
 		if (!this.client) return;
 		await this.client.auth.signOut();
 		this.setStatus("offline");
-		new Notice("supabase jump: signed out");
+		new Notice("SupaBase Jump: Signed out");
 	}
 
 	registerChannel(channel: ReturnType<SupabaseClient["channel"]>) {

@@ -1,6 +1,6 @@
 {
 	"name": "supabase-jump",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"description": "Obsidian plugin to sync your vault with Supabase",
 	"main": "main.js",
 	"type": "module",

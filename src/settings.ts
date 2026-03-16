@@ -134,7 +134,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 				"Generate at supabase.com/dashboard/account/tokens - only needed for this setup step, can be cleared after",
 			)
 			.addText((text) => {
-				text.setPlaceholder("sbp_...")
+				text.setPlaceholder("Sbp_...")
 					.setValue(this.plugin.settings.personalAccessToken)
 					.onChange(async (value) => {
 						this.plugin.settings.personalAccessToken = value.trim();
@@ -146,7 +146,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("One-click project setup")
 			.setDesc(
-				"creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket; run once after creating your supabase project",
+				"Creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket; run once after creating your supabase project",
 			)
 			.addButton((btn) => {
 				btn.setButtonText("Run full setup").setCta();
@@ -197,9 +197,9 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Anon/public key")
-			.setDesc("found under project settings → api")
+			.setDesc("Found under project settings → api")
 			.addText((text) => {
-				text.setPlaceholder("eyJ...")
+				text.setPlaceholder("EyJ...")
 					.setValue(this.plugin.settings.supabaseAnonKey)
 					.onChange(async (value) => {
 						this.plugin.settings.supabaseAnonKey = value.trim();
@@ -212,10 +212,10 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Email")
-			.setDesc("supabase auth email address")
+			.setDesc("Supabase auth email address")
 			.addText((text) =>
 				text
-					.setPlaceholder("you@example.com")
+					.setPlaceholder("You@example.com")
 					.setValue(this.plugin.settings.email)
 					.onChange(async (value) => {
 						this.plugin.settings.email = value.trim();
@@ -263,11 +263,11 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Vault ID")
 			.setDesc(
-				"unique identifier for this vault; files are namespaced under this id in supabase storage; each vault syncing to the same supabase project needs a different id",
+				"Unique identifier for this vault; files are namespaced under this id in supabase storage; each vault syncing to the same supabase project needs a different id",
 			)
 			.addText((text) => {
 				vaultIdText = text;
-				text.setPlaceholder("my-vault")
+				text.setPlaceholder("My-Vault")
 					.setValue(this.plugin.settings.vaultId)
 					.onChange(async (value) => {
 						this.plugin.settings.vaultId = value.trim();
@@ -286,7 +286,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 						vaultIdText.setValue(id);
 						this.plugin.settings.vaultId = id;
 						await this.plugin.saveSettings();
-						new Notice("supabase jump: vault id generated");
+						new Notice("SupaBase Jump: vault id generated");
 					}),
 			);
 
@@ -297,7 +297,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("templates, archive/old")
+					.setPlaceholder("Templates, Archive/Old")
 					.setValue(this.plugin.settings.excludedFolders.join(", "))
 					.onChange(async (value) => {
 						this.plugin.settings.excludedFolders = value
@@ -312,7 +312,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Sync on startup")
-			.setDesc("run a full sync automatically when obsidian opens")
+			.setDesc("Run a full sync automatically when obsidian opens")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.syncOnStartup)
@@ -325,7 +325,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Sync interval (minutes)")
 			.setDesc(
-				"how often to sync in the background; set to 0 to disable background sync",
+				"How often to sync in the background; set to 0 to disable background sync",
 			)
 			.addSlider((slider) =>
 				slider
@@ -343,7 +343,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Force sync")
 			.setDesc(
-				"immediately compare and reconcile all local and remote files",
+				"Immediately compare and reconcile all local and remote files",
 			)
 			.addButton((btn) =>
 				btn
@@ -362,7 +362,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Fetch from database")
 			.setDesc(
-				"download all remote changes to this device without pushing local files",
+				"Download all remote changes to this device without pushing local files",
 			)
 			.addButton((btn) =>
 				btn.setButtonText("Fetch now").onClick(async () => {

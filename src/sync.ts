@@ -351,7 +351,7 @@ export class SyncEngine {
 		const { vaultId } = this.host.settings;
 
 		if (!vaultId) {
-			new Notice("supabase jump: vault id is not set - cannot fetch");
+			new Notice("SupaBase Jump: Vault ID is not set - cannot fetch");
 			return;
 		}
 
@@ -411,7 +411,7 @@ export class SyncEngine {
 		const { vaultId } = this.host.settings;
 
 		if (!vaultId) {
-			new Notice("supabase jump: vault id is not set - cannot sync");
+			new Notice("SupaBase Jump: Vault ID is not set - cannot sync");
 			return;
 		}
 

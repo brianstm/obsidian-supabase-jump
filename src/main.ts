@@ -358,7 +358,7 @@ export default class SupaBaseJumpPlugin extends Plugin {
 		}
 
 		new Notice(
-			"supabase jump: all set - table, bucket, and realtime enabled ✓",
+			"SupaBase Jump: all set - table, bucket, and realtime enabled ✓",
 		);
 	}
 }
