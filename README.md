@@ -190,18 +190,22 @@ src/
 
 ## License
 
-0-BSD (Zero-Clause BSD) - see [LICENSE](LICENSE)
+MIT - see [LICENSE](LICENSE)
 
 ## Support
 
 - **Issues & Feature Requests** - [GitHub Issues](https://github.com/brianstm/obsidian-supabase-jump/issues)
-- **Discussions** - [GitHub Discussions](https://github.com/brianstm/obsidian-supabase-jump/discussions)
 
 ## Acknowledgments
+
+<div align="center">
+
+**Note:** This is an unofficial way to sync and back up your notes. [Obsidian Sync](https://obsidian.md/sync) is the official supported option.
+
+</div>
 
 Built with:
 - [Obsidian Plugin API](https://docs.obsidian.md)
 - [Supabase](https://supabase.com)
 - [Supabase JS Client](https://github.com/supabase/supabase-js)
-# obsidian-supabase-jump
-# obsidian-supabase-jump
+
