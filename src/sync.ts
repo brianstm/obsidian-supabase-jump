@@ -141,9 +141,9 @@ export class SyncEngine {
 				`SupaBase Jump: pushFile failed for "${file.path}"`,
 				err,
 			);
-			new Notice(
-				`SupaBase Jump: push failed for "${file.path}" - ${msg}`,
-			);
+		new Notice(
+			`SupaBase Jump: Push failed for "${file.path}" - ${msg}`,
+		);
 			throw err; // re-throw so fullSync can count errors
 		}
 	}
@@ -238,7 +238,7 @@ export class SyncEngine {
 				`SupaBase Jump: pullFile failed for "${row.path}"`,
 				err,
 			);
-			new Notice(`SupaBase Jump: pull failed for "${row.path}" - ${msg}`);
+			new Notice(`SupaBase Jump: Pull failed for "${row.path}" - ${msg}`);
 			throw err; // re-throw so fullSync can count errors
 		}
 	}
@@ -342,7 +342,7 @@ export class SyncEngine {
 				`SupaBase Jump: deleteRemoteFile failed for "${path}"`,
 				err,
 			);
-			new Notice(`SupaBase Jump: delete failed for "${path}" - ${msg}`);
+			new Notice(`SupaBase Jump: Delete failed for "${path}" - ${msg}`);
 			throw err;
 		}
 	}
@@ -350,10 +350,10 @@ export class SyncEngine {
 	async fetchOnly(): Promise<void> {
 		const { vaultId } = this.host.settings;
 
-		if (!vaultId) {
-			new Notice("SupaBase Jump: Vault ID is not set - cannot fetch");
-			return;
-		}
+	if (!vaultId) {
+		new Notice("SupaBase jump: vault ID is not set - cannot fetch");
+		return;
+	}
 
 		this.host.setStatus("syncing");
 		const errors: string[] = [];
@@ -397,23 +397,23 @@ export class SyncEngine {
 			const s = errors.length;
 			const suffix =
 				s > 0 ? ` (${s} error${s > 1 ? "s" : ""} - see console)` : "";
-			new Notice(`SupaBase Jump: fetch complete${suffix}`);
+			new Notice(`SupaBase Jump: Fetch complete${suffix}`);
 		} catch (err) {
 			console.error("SupaBase Jump: fetchOnly failed", err);
 			this.host.setStatus("error");
-			new Notice(
-				`SupaBase Jump: fetch failed - ${err instanceof Error ? err.message : String(err)}`,
-			);
+		new Notice(
+			`SupaBase Jump: Fetch failed - ${err instanceof Error ? err.message : String(err)}`,
+		);
 		}
 	}
 
 	async fullSync(): Promise<void> {
 		const { vaultId } = this.host.settings;
 
-		if (!vaultId) {
-			new Notice("SupaBase Jump: Vault ID is not set - cannot sync");
-			return;
-		}
+	if (!vaultId) {
+		new Notice("SupaBase jump: vault ID is not set - cannot sync");
+		return;
+	}
 
 		this.host.setStatus("syncing");
 		const errors: string[] = [];
@@ -473,13 +473,13 @@ export class SyncEngine {
 			const s = errors.length;
 			const suffix =
 				s > 0 ? ` (${s} error${s > 1 ? "s" : ""} - see console)` : "";
-			new Notice(`SupaBase Jump: sync complete${suffix}`);
+			new Notice(`SupaBase Jump: Sync complete${suffix}`);
 		} catch (err) {
 			console.error("SupaBase Jump: fullSync failed", err);
 			this.host.setStatus("error");
-			new Notice(
-				`SupaBase Jump: sync failed - ${err instanceof Error ? err.message : String(err)}`,
-			);
+		new Notice(
+			`SupaBase Jump: Sync failed - ${err instanceof Error ? err.message : String(err)}`,
+		);
 		}
 	}
 
@@ -503,9 +503,9 @@ export class SyncEngine {
 							"SupaBase Jump: realtime handler error",
 							err,
 						);
-						new Notice(
-							`SupaBase Jump: realtime error - ${err instanceof Error ? err.message : String(err)}`,
-						);
+				new Notice(
+					`SupaBase Jump: Realtime error - ${err instanceof Error ? err.message : String(err)}`,
+				);
 					});
 				},
 			)
@@ -513,9 +513,9 @@ export class SyncEngine {
 				if (status === "CHANNEL_ERROR") {
 					console.error("SupaBase Jump: realtime channel error");
 					this.host.setStatus("error");
-					new Notice(
-						"Supabase jump: realtime channel error - check supabase project status",
-					);
+				new Notice(
+					"SupaBase jump: realtime channel error - check supabase project status",
+				);
 				}
 			});
 

@@ -46,10 +46,10 @@ export class SupabaseManager {
 		try {
 			parsedUrl = new URL(supabaseUrl);
 		} catch {
-			this.setStatus("error");
-			new Notice(
-				"SupaBase Jump: Project URL is not a valid URL - check your settings",
-			);
+	this.setStatus("error");
+	new Notice(
+		"SupaBase jump: project URL is not a valid URL - check your settings",
+	);
 			return;
 		}
 
@@ -74,7 +74,7 @@ export class SupabaseManager {
 			this.client = null;
 			this.setStatus("error");
 			const msg = err instanceof Error ? err.message : String(err);
-			new Notice(`SupaBase Jump: connection failed - ${msg}`, 8000);
+			new Notice(`SupaBase Jump: Connection failed - ${msg}`, 8000);
 		}
 	}
 
@@ -93,7 +93,7 @@ export class SupabaseManager {
 		const { email, password } = this.host.settings;
 		if (!email || !password) {
 			this.setStatus("offline");
-			new Notice("SupaBase Jump: Email and password are required");
+			new Notice("SupaBase jump: email and password are required");
 			return;
 		}
 
@@ -114,7 +114,7 @@ export class SupabaseManager {
 
 		if (!error) {
 			this.setStatus("synced");
-			new Notice("SupaBase Jump: Connected");
+			new Notice("SupaBase jump: connected");
 			return;
 		}
 
@@ -149,9 +149,9 @@ export class SupabaseManager {
 					signUpResult.error,
 				);
 				this.setStatus("error");
-				new Notice(
-					`SupaBase Jump: sign-up failed - ${signUpResult.error.message}`,
-				);
+			new Notice(
+				`SupaBase Jump: Sign-up failed - ${signUpResult.error.message}`,
+			);
 				return;
 			}
 
@@ -166,21 +166,21 @@ export class SupabaseManager {
 				);
 			} else {
 				this.setStatus("synced");
-				new Notice("SupaBase Jump: Account created and connected");
+				new Notice("SupaBase jump: account created and connected");
 			}
 			return;
 		}
 
-		console.error("SupaBase Jump: sign-in failed", error);
-		this.setStatus("error");
-		new Notice(`SupaBase Jump: sign-in failed - ${error.message}`);
+	console.error("SupaBase Jump: sign-in failed", error);
+	this.setStatus("error");
+	new Notice(`SupaBase Jump: Sign-in failed - ${error.message}`);
 	}
 
 	async signOut(): Promise<void> {
 		if (!this.client) return;
 		await this.client.auth.signOut();
 		this.setStatus("offline");
-		new Notice("SupaBase Jump: Signed out");
+		new Notice("SupaBase jump: signed out");
 	}
 
 	registerChannel(channel: ReturnType<SupabaseClient["channel"]>) {

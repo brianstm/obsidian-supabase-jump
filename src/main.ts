@@ -337,11 +337,11 @@ export default class SupaBaseJumpPlugin extends Plugin {
 
 			if (!bucketOk) {
 				new Notice(
-					"SupaBase Jump: could not auto-create storage bucket.\n\n" +
+					"SupaBase Jump: Could not auto-create storage bucket.\n\n" +
 						"Create it manually: Supabase \u2192 Storage \u2192 New bucket\n" +
 						"  Name: vault-attachments\n" +
 						"  Public: OFF\n\n" +
-						"Then continue - the RLS policy was applied in step 3.",
+						"Then continue - The RLS policy was applied in step 3.",
 					14000,
 				);
 			}
@@ -357,8 +357,8 @@ export default class SupaBaseJumpPlugin extends Plugin {
 			throw err;
 		}
 
-		new Notice(
-			"SupaBase Jump: all set - table, bucket, and realtime enabled ✓",
-		);
+	new Notice(
+		"SupaBase jump: all set - table, bucket, and realtime enabled ✓",
+	);
 	}
 }

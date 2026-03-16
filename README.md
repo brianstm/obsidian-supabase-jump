@@ -14,7 +14,9 @@ Sync your Obsidian vault with Supabase in real time. Access your notes from any 
 
 ## Demo
 
-![Demo Video](assets/video-demo.mp4)
+<video src="https://github.com/user-attachments/assets/video-demo.mp4" controls></video>
+
+> **Note:** If the video doesn't display above, you can [download it here](assets/video-demo.mp4) or view it in the repository's assets folder.
 
 ## Features
 
@@ -35,13 +37,6 @@ Sync your Obsidian vault with Supabase in real time. Access your notes from any 
 3. Copy your **Project URL** and **anon/public key** from **Settings → API**
 
 ### 2. Install the Plugin
-
-#### From Obsidian Community Plugins (Recommended)
-
-1. Open **Settings → Community plugins**
-2. Disable **Restricted mode** if enabled
-3. Search for **"SupaBase Jump"**
-4. Click **Install**, then **Enable**
 
 #### Manual Installation
 

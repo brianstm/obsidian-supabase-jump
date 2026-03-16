@@ -130,9 +130,9 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Personal access token")
-			.setDesc(
-				"Generate at supabase.com/dashboard/account/tokens - only needed for this setup step, can be cleared after",
-			)
+		.setDesc(
+			"Generate at supabase.com/dashboard/account/tokens - Only needed for this setup step, can be cleared after",
+		)
 			.addText((text) => {
 				text.setPlaceholder("Sbp_...")
 					.setValue(this.plugin.settings.personalAccessToken)
@@ -145,9 +145,9 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("One-click project setup")
-			.setDesc(
-				"Creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket; run once after creating your supabase project",
-			)
+		.setDesc(
+			"Creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket; run once after creating your supabase project",
+		)
 			.addButton((btn) => {
 				btn.setButtonText("Run full setup").setCta();
 				btn.onClick(async () => {
@@ -195,11 +195,11 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(containerEl)
-			.setName("Anon/public key")
-			.setDesc("Found under project settings → api")
-			.addText((text) => {
-				text.setPlaceholder("EyJ...")
+	new Setting(containerEl)
+		.setName("Anon/public key")
+		.setDesc("Found under project settings → API")
+		.addText((text) => {
+			text.setPlaceholder("eyJ...")
 					.setValue(this.plugin.settings.supabaseAnonKey)
 					.onChange(async (value) => {
 						this.plugin.settings.supabaseAnonKey = value.trim();
@@ -212,10 +212,10 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Email")
-			.setDesc("Supabase auth email address")
-			.addText((text) =>
-				text
-					.setPlaceholder("You@example.com")
+		.setDesc("Supabase auth email address")
+		.addText((text) =>
+			text
+				.setPlaceholder("You@example.com")
 					.setValue(this.plugin.settings.email)
 					.onChange(async (value) => {
 						this.plugin.settings.email = value.trim();
@@ -260,14 +260,14 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Vault").setHeading();
 
 		let vaultIdText: TextComponent;
-		new Setting(containerEl)
-			.setName("Vault ID")
-			.setDesc(
-				"Unique identifier for this vault; files are namespaced under this id in supabase storage; each vault syncing to the same supabase project needs a different id",
-			)
-			.addText((text) => {
-				vaultIdText = text;
-				text.setPlaceholder("My-Vault")
+	new Setting(containerEl)
+		.setName("Vault ID")
+		.setDesc(
+			"Unique identifier for this vault; files are namespaced under this ID in supabase storage; each vault syncing to the same supabase project needs a different ID",
+		)
+		.addText((text) => {
+			vaultIdText = text;
+			text.setPlaceholder("My-vault")
 					.setValue(this.plugin.settings.vaultId)
 					.onChange(async (value) => {
 						this.plugin.settings.vaultId = value.trim();
@@ -283,21 +283,21 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 							.randomUUID()
 							.replace(/-/g, "")
 							.slice(0, 12);
-						vaultIdText.setValue(id);
-						this.plugin.settings.vaultId = id;
-						await this.plugin.saveSettings();
-						new Notice("SupaBase Jump: vault id generated");
+				vaultIdText.setValue(id);
+				this.plugin.settings.vaultId = id;
+				await this.plugin.saveSettings();
+				new Notice("SupaBase jump: vault ID generated");
 					}),
 			);
 
 		new Setting(containerEl)
 			.setName("Excluded folders")
-			.setDesc(
-				"Comma-separated list of folder paths to exclude from sync (e.g. templates, archive/old)",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("Templates, Archive/Old")
+		.setDesc(
+			"Comma-separated list of folder paths to exclude from sync (e.g., templates, archive/old)",
+		)
+		.addText((text) =>
+			text
+				.setPlaceholder("Templates, archive/old")
 					.setValue(this.plugin.settings.excludedFolders.join(", "))
 					.onChange(async (value) => {
 						this.plugin.settings.excludedFolders = value
@@ -310,9 +310,9 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName("Sync behaviour").setHeading();
 
-		new Setting(containerEl)
-			.setName("Sync on startup")
-			.setDesc("Run a full sync automatically when obsidian opens")
+	new Setting(containerEl)
+		.setName("Sync on startup")
+		.setDesc("Run a full sync automatically when the app opens")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.syncOnStartup)
@@ -324,9 +324,9 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Sync interval (minutes)")
-			.setDesc(
-				"How often to sync in the background; set to 0 to disable background sync",
-			)
+		.setDesc(
+			"How often to sync in the background; set to 0 to disable background sync",
+		)
 			.addSlider((slider) =>
 				slider
 					.setLimits(0, 60, 1)
