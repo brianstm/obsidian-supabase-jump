@@ -441,7 +441,7 @@ export class SyncEngine {
 		const { vaultId } = this.host.settings;
 
 	if (!vaultId) {
-		new Notice("Supabase Jump: vault ID is not set - cannot fetch");
+		new Notice("Supabase jump: vault ID is not set - cannot fetch");
 		return;
 	}
 
@@ -501,7 +501,7 @@ export class SyncEngine {
 		const { vaultId } = this.host.settings;
 
 	if (!vaultId) {
-		new Notice("Supabase Jump: vault ID is not set - cannot sync");
+		new Notice("Supabase jump: vault ID is not set - cannot sync");
 		return;
 	}
 
@@ -632,7 +632,7 @@ export class SyncEngine {
 					);
 					this.host.setStatus("error");
 					new Notice(
-						`Supabase Jump: Realtime disconnected - reconnecting in ${REALTIME_RECONNECT_MS / 1000}s…`,
+						`Supabase jump: Realtime disconnected - reconnecting in ${REALTIME_RECONNECT_MS / 1000}s…`,
 					);
 					if (this.realtimeReconnectTimer !== null) return;
 					this.realtimeReconnectTimer = window.setTimeout(() => {

@@ -1,8 +1,8 @@
 {
 	"id": "supabase-jump",
 	"name": "SupaBase Jump",
-	"version": "1.0.6",
-	"minAppVersion": "0.19.0",
+	"version": "1.0.7",
+	"minAppVersion": "0.20.0",
 	"description": "Sync your vault with Supabase in real time.",
 	"author": "Brians Tjipto",
 	"authorUrl": "https://github.com/brianstm",

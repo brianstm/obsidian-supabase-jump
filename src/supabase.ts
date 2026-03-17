@@ -47,7 +47,7 @@ export class SupabaseManager {
 		} catch {
 	this.setStatus("error");
 	new Notice(
-		"Supabase Jump: project URL is not a valid URL - check your settings",
+		"Supabase jump: project URL is not a valid URL - check your settings",
 	);
 			return;
 		}
@@ -85,7 +85,7 @@ export class SupabaseManager {
 		const { email, password } = this.host.settings;
 		if (!email || !password) {
 			this.setStatus("offline");
-			new Notice("Supabase Jump: email and password are required");
+			new Notice("Supabase jump: email and password are required");
 			return;
 		}
 
@@ -106,7 +106,7 @@ export class SupabaseManager {
 
 		if (!error) {
 			this.setStatus("synced");
-			new Notice("Supabase Jump: connected");
+			new Notice("Supabase jump: connected");
 			return;
 		}
 
@@ -158,7 +158,7 @@ export class SupabaseManager {
 				);
 			} else {
 				this.setStatus("synced");
-				new Notice("Supabase Jump: account created and connected");
+				new Notice("Supabase jump: account created and connected");
 			}
 			return;
 		}
@@ -172,7 +172,7 @@ export class SupabaseManager {
 		if (!this.client) return;
 		await this.client.auth.signOut();
 		this.setStatus("offline");
-		new Notice("Supabase Jump: signed out");
+		new Notice("Supabase jump: signed out");
 	}
 
 	registerChannel(channel: ReturnType<SupabaseClient["channel"]>) {

@@ -20,7 +20,7 @@ export default tseslint.config(
 				"warn",
 				{
 					allowAutoFix: true,
-					brands: ["Supabase Jump", "Supabase", "Jump"],
+					brands: ["Supabase jump", "Supabase", "Jump"],
 				},
 			],
 		},
