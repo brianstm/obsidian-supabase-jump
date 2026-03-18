@@ -162,7 +162,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("One-click project setup")
 			.setDesc(
-				"Creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket. Run once after creating your supabase project.",
+				"Creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket. Run once after creating your Supabase project.",
 			)
 			.addButton((btn) => {
 				btn.setButtonText("Run full setup").setCta();
@@ -191,7 +191,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 			"Copy the Project URL and anon/public API key from Project Settings → API.",
 			"Generate a Personal Access Token at supabase.com/dashboard/account/tokens.",
 			"Enter the URL, keys, and token above, then click Run full setup.",
-			"Alternatively, run the SQL below in the Supabase SQL editor and create the storage bucket manually.",
+			"Alternatively, run the SQL below in the supabase SQL editor and create the storage bucket manually.",
 		].forEach((s) => steps.createEl("li", { text: s }));
 
 		guide.createEl("pre", { text: SETUP_SQL, cls: "sbj-sql-block" });
@@ -200,7 +200,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Project URL")
-			.setDesc("Your Supabase project URL (https://<project-ref>.supabase.co)")
+			.setDesc("Your supabase project URL (https://<project-ref>.supabase.co)")
 			.addText((text) =>
 				text
 					.setPlaceholder("https://xxxx.supabase.co")
@@ -279,7 +279,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Vault ID")
 			.setDesc(
-				"Unique identifier for this vault; files are namespaced under this ID in supabase storage; each vault syncing to the same supabase project needs a different ID",
+				"Unique identifier for this vault; files are namespaced under this ID in Supabase storage; each vault syncing to the same Supabase project needs a different ID",
 			)
 			.addText((text) => {
 				vaultIdText = text;

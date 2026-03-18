@@ -5,6 +5,12 @@ All notable changes to SupaBase Jump will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-03-19
+
+### Fixed
+
+- Fixed the bug where if DB has newer content than local disk, the local disk will be overwritten with the DB content even if the user has edited the file locally.
+
 ## [1.1.0] - 2026-03-18
 
 ### Added
@@ -117,6 +123,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No version history (single-version sync)
 - No selective file sync (all-or-nothing per folder)
 - Supabase Management API bucket creation may fail on some project types (manual fallback provided)
-
-[1.0.2]: https://github.com/brianstm/obsidian-supabase-jump/releases/tag/1.0.2
-[1.0.3]: https://github.com/brianstm/obsidian-supabase-jump/releases/tag/1.0.3

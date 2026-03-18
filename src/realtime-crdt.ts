@@ -72,7 +72,8 @@ export class RealtimeCrdtManager {
 		this.ydoc = new Y.Doc();
 		this.ytext = this.ydoc.getText("content");
 
-		const content = await this.plugin.app.vault.read(file);
+		// Always seed from the freshest known state (disk vs DB)
+		const content = await this.getFreshContent(file);
 		this.ydoc.transact(() => {
 			this.ytext!.insert(0, content);
 		}, "init"); // origin = "init" so we don't broadcast
@@ -141,6 +142,43 @@ export class RealtimeCrdtManager {
 				if (promise) void promise;
 			}
 		});
+	}
+
+	// Fetch whichever is newer: local disk or DB row.
+	// This avoids seeding Yjs from a stale file when the peer already synced to DB
+	// but the local realtime pull hasn't fired yet.
+	private async getFreshContent(file: TFile): Promise<string> {
+		const diskContent = await this.plugin.app.vault.read(file);
+		const diskMtime = file.stat.mtime;
+
+		try {
+			const rowId = `${this.vaultId!}::${file.path.replace(/\//g, "__SLASH__")}`;
+			const { data } = await this.supabase!
+				.from("vault_files")
+				.select("content, mtime")
+				.eq("id", rowId)
+				.eq("deleted", false)
+				.single<{ content: string | null; mtime: number }>();
+
+			if (data && data.content !== null && data.mtime > diskMtime) {
+				// DB has newer content - patch the editor silently and return it
+				if (this.activeEditor) {
+					this.suppressNextEditorChange++;
+					this.activeEditor.setValue(data.content);
+				}
+				// Also persist to disk so subsequent reads are correct
+				try {
+					await this.plugin.app.vault.modify(file, data.content);
+				} catch {
+					// Non-fatal - editor already shows correct content
+				}
+				return data.content;
+			}
+		} catch {
+			// Non-fatal - fall back to disk content
+		}
+
+		return diskContent;
 	}
 
 	// Broadcast helpers
