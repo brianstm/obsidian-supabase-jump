@@ -194,6 +194,16 @@ export default class SupaBaseJumpPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "connect",
+			name: "Connect to Supabase",
+			callback: () => {
+				this.initSupabase().catch((err) =>
+					console.error("Supabase jump: Connect error", err),
+				);
+			},
+		});
+
+		this.addCommand({
 			id: "force-sync",
 			name: "Force sync now",
 			callback: () => {

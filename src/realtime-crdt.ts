@@ -45,6 +45,26 @@ export class RealtimeCrdtManager {
 				this.handleEditorChange.bind(this),
 			)
 		);
+		this.plugin.registerDomEvent(document, 'visibilitychange', () => {
+			if (document.visibilityState === 'visible' && this.activeChannel) {
+				// App became visible, check if channel needs reconnection
+				console.debug("App became visible, checking realtime channel");
+				// Check if channel is still connected
+				const channelState = (this.activeChannel as { state?: string }).state;
+				if (channelState === 'closed' || channelState === 'leaving') {
+					console.debug("Channel is closed, attempting to resubscribe");
+					this.activeChannel.subscribe();
+				} else if (this.ydoc) {
+					// Trigger a re-sync to ensure we're up to date
+					const sv = Y.encodeStateVector(this.ydoc);
+					this.activeChannel.send({
+						type: "broadcast",
+						event: "sync-step-1",
+						payload: { stateVector: Array.from(sv) },
+					}).catch((err) => console.error("Failed to send sync message:", err));
+				}
+			}
+		});
 	}
 
 	stop() {
@@ -132,14 +152,22 @@ export class RealtimeCrdtManager {
 		);
 
 		this.activeChannel.subscribe((status: string) => {
+			console.debug(`Realtime channel status: ${status}`);
 			if (status === "SUBSCRIBED" && this.ydoc) {
 				const sv = Y.encodeStateVector(this.ydoc);
-				const promise = this.activeChannel?.send({
+				this.activeChannel?.send({
 					type: "broadcast",
 					event: "sync-step-1",
 					payload: { stateVector: Array.from(sv) },
-				});
-				if (promise) void promise;
+				}).catch((err) => console.error("Failed to send sync message:", err));
+			} else if (status === "CLOSED" || status === "ERROR") {
+				// Attempt to reconnect after a delay
+				setTimeout(() => {
+					if (this.activeChannel && this.supabase && this.vaultId && this.activeFile) {
+						console.debug("Attempting to reconnect realtime channel");
+						this.activeChannel.subscribe();
+					}
+				}, 1000);
 			}
 		});
 	}
