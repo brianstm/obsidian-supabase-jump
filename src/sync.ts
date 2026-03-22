@@ -80,6 +80,10 @@ export class SyncEngine {
 	private configFileCache = new Map<string, number>();
 	private ignorePaths = new Set<string>();
 	private realtimeReconnectTimer: number | null = null;
+	private realtimeChannel: ReturnType<SupabaseClient["channel"]> | null = null;
+	private realtimeReconnectAttempts = 0;
+	private readonly maxRealtimeReconnectAttempts = 6;
+	private realtimeEventListenersSetup = false;
 
 	constructor(host: SyncHost) {
 		this.host = host;
@@ -624,8 +628,42 @@ export class SyncEngine {
 		const { vaultId } = this.host.settings;
 		if (!vaultId) return;
 
-		this.client
-			.channel(`vault-${vaultId}`)
+		if (!this.host.supabase) {
+			this.host.setStatus("offline");
+			return;
+		}
+
+		if (this.realtimeReconnectTimer !== null) {
+			window.clearTimeout(this.realtimeReconnectTimer);
+			this.realtimeReconnectTimer = null;
+		}
+
+		if (this.realtimeChannel) {
+			this.realtimeChannel
+				.unsubscribe()
+				.catch(() => {
+					// ignore unsubscribe failures
+				});
+			this.realtimeChannel = null;
+		}
+
+		// Add listeners for browser visibility/online so we can recover after sleep
+		if (!this.realtimeEventListenersSetup) {
+			window.addEventListener("visibilitychange", () => {
+				if (document.visibilityState === "visible") {
+					this.reconnectRealtime();
+				}
+			});
+			window.addEventListener("online", () => {
+				this.reconnectRealtime();
+			});
+			this.realtimeEventListenersSetup = true;
+		}
+
+		const channel = this.client.channel(`vault-${vaultId}`);
+		this.realtimeChannel = channel;
+
+		channel
 			.on<VaultFileRow>(
 				"postgres_changes",
 				{
@@ -636,10 +674,7 @@ export class SyncEngine {
 				},
 				(payload) => {
 					this.handleRealtimeEvent(payload).catch((err) => {
-						console.error(
-							"Supabase jump: Realtime handler error",
-							err,
-						);
+						console.error("Supabase jump: Realtime handler error", err);
 						new Notice(
 							`Supabase jump: Realtime handler error - ${err instanceof Error ? err.message : String(err)}`,
 						);
@@ -647,26 +682,45 @@ export class SyncEngine {
 				},
 			)
 			.subscribe((status: string) => {
+				if (status === "SUBSCRIBED") {
+					this.realtimeReconnectAttempts = 0;
+					this.host.setStatus("synced");
+					return;
+				}
+
 				if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+					this.realtimeReconnectAttempts += 1;
+					if (this.realtimeReconnectAttempts > this.maxRealtimeReconnectAttempts) {
+						this.host.setStatus("offline");
+						new Notice(
+							"Supabase jump: Realtime reconnect failed. Press Connect in Settings to retry.",
+						);
+						return;
+					}
+
 					console.error(
 						`Supabase jump: Realtime channel ${status.toLowerCase()} - reconnecting in ${REALTIME_RECONNECT_MS / 1000}s`,
 					);
 					this.host.setStatus("error");
-					new Notice(
-						`Supabase jump: Realtime disconnected - reconnecting in ${REALTIME_RECONNECT_MS / 1000}s…`,
-					);
 					if (this.realtimeReconnectTimer !== null) return;
 					this.realtimeReconnectTimer = window.setTimeout(() => {
 						this.realtimeReconnectTimer = null;
-						if (!this.client) return;
 						void this.client.removeAllChannels().then(() => {
 							this.startRealtimeListener();
 						});
 					}, REALTIME_RECONNECT_MS);
-				} else if (status === "SUBSCRIBED") {
-					this.host.setStatus("synced");
 				}
 			});
+	}
+
+	private reconnectRealtime(): void {
+		if (this.host.settings.vaultId && this.host.supabase) {
+			if (this.realtimeReconnectTimer !== null) {
+				window.clearTimeout(this.realtimeReconnectTimer);
+				this.realtimeReconnectTimer = null;
+			}
+			this.startRealtimeListener();
+		}
 	}
 
 	private async handleRealtimeEvent(payload: {
@@ -833,6 +887,10 @@ export class SyncEngine {
 		if (this.realtimeReconnectTimer !== null) {
 			window.clearTimeout(this.realtimeReconnectTimer);
 			this.realtimeReconnectTimer = null;
+		}
+		if (this.realtimeChannel) {
+			this.realtimeChannel.unsubscribe().catch(() => {});
+			this.realtimeChannel = null;
 		}
 		this.changeQueue.clear();
 		this.configFileCache.clear();
