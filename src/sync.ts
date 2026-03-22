@@ -99,6 +99,9 @@ export class SyncEngine {
 	}
 
 	private shouldSkip(filePath: string): boolean {
+		const fileName = filePath.split('/').pop();
+		if (fileName === '.DS_Store' || fileName === 'main.js') return true;
+
 		if (
 			!this.host.settings.syncConfigFolder &&
 			(filePath === this.host.vault.configDir ||
