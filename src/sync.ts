@@ -684,11 +684,17 @@ export class SyncEngine {
 			.subscribe((status: string) => {
 				if (status === "SUBSCRIBED") {
 					this.realtimeReconnectAttempts = 0;
+					if (this.realtimeReconnectTimer !== null) {
+						window.clearTimeout(this.realtimeReconnectTimer);
+						this.realtimeReconnectTimer = null;
+					}
 					this.host.setStatus("synced");
 					return;
 				}
 
 				if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+					if (this.realtimeReconnectTimer !== null) return;
+
 					this.realtimeReconnectAttempts += 1;
 					if (this.realtimeReconnectAttempts > this.maxRealtimeReconnectAttempts) {
 						this.host.setStatus("offline");
@@ -698,17 +704,23 @@ export class SyncEngine {
 						return;
 					}
 
+					const delayMs = Math.min(
+						REALTIME_RECONNECT_MS * 2 ** (this.realtimeReconnectAttempts - 1),
+						60000,
+					);
+
 					console.error(
-						`Supabase jump: Realtime channel ${status.toLowerCase()} - reconnecting in ${REALTIME_RECONNECT_MS / 1000}s`,
+						`Supabase jump: Realtime channel ${status.toLowerCase()} - reconnecting in ${delayMs / 1000}s`,
 					);
 					this.host.setStatus("error");
-					if (this.realtimeReconnectTimer !== null) return;
+
 					this.realtimeReconnectTimer = window.setTimeout(() => {
 						this.realtimeReconnectTimer = null;
+						if (!this.client) return;
 						void this.client.removeAllChannels().then(() => {
 							this.startRealtimeListener();
 						});
-					}, REALTIME_RECONNECT_MS);
+					}, delayMs);
 				}
 			});
 	}
