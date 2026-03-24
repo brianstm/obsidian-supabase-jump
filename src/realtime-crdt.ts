@@ -19,9 +19,6 @@ export class RealtimeCrdtManager {
 	private ytext: Y.Text | null = null;
 	private activeFile: TFile | null = null;
 	private activeEditor: Editor | null = null;
-
-	// Guard counter
-
 	private suppressNextEditorChange = 0;
 
 	constructor(plugin: Plugin) {
@@ -33,25 +30,28 @@ export class RealtimeCrdtManager {
 		this.vaultId = vaultId;
 	}
 
+	/** Returns true while the given path is open in an active CRDT session. */
+	isActiveFile(path: string): boolean {
+		return this.activeFile?.path === path;
+	}
+
 	start() {
 		this.plugin.registerEvent(
 			this.plugin.app.workspace.on("active-leaf-change", (leaf) => {
 				this.handleLeafChange(leaf).catch(console.error);
-			})
+			}),
 		);
 		this.plugin.registerEvent(
 			this.plugin.app.workspace.on(
 				"editor-change",
 				this.handleEditorChange.bind(this),
-			)
+			),
 		);
 	}
 
 	stop() {
 		this.leaveCurrentChannel();
 	}
-
-	// Leaf change – join / leave CRDT channel
 
 	private async handleLeafChange(leaf: WorkspaceLeaf | null) {
 		this.leaveCurrentChannel();
@@ -68,19 +68,20 @@ export class RealtimeCrdtManager {
 		if (!this.activeEditor) return;
 		this.activeFile = file;
 
-		// Yjs initialisation
 		this.ydoc = new Y.Doc();
 		this.ytext = this.ydoc.getText("content");
 
-		// Always seed from the freshest known state (disk vs DB)
 		const content = await this.getFreshContent(file);
 		this.ydoc.transact(() => {
 			this.ytext!.insert(0, content);
-		}, "init"); // origin = "init" so we don't broadcast
+		}, "init");
 
-		// Observe the Y.Text for remote changes and patch the editor
 		this.ytext.observe((event) => {
-			if (event.transaction.origin === "local" || event.transaction.origin === "init") return;
+			if (
+				event.transaction.origin === "local" ||
+				event.transaction.origin === "init"
+			)
+				return;
 			this.patchEditorFromYjs();
 		});
 
@@ -89,7 +90,6 @@ export class RealtimeCrdtManager {
 			this.broadcastUpdate(update);
 		});
 
-		// Supabase channel
 		const channelId = `doc-${this.vaultId}-${btoa(encodeURIComponent(file.path)).replace(/=+$/, "")}`;
 		this.activeChannel = this.supabase.channel(channelId);
 
@@ -110,12 +110,11 @@ export class RealtimeCrdtManager {
 				if (!p.payload.stateVector) return;
 				const sv = new Uint8Array(p.payload.stateVector);
 				const update = Y.encodeStateAsUpdate(this.ydoc, sv);
-				const promise = this.activeChannel?.send({
+				void this.activeChannel?.send({
 					type: "broadcast",
 					event: "sync-step-2",
 					payload: { update: Array.from(update) },
 				});
-				if (promise) void promise;
 			},
 		);
 
@@ -126,26 +125,24 @@ export class RealtimeCrdtManager {
 				if (!this.ydoc) return;
 				const p = payload as CRDTPayload;
 				if (!p.payload.update) return;
-				const update = new Uint8Array(p.payload.update);
-				Y.applyUpdate(this.ydoc, update, "remote");
+				Y.applyUpdate(this.ydoc, new Uint8Array(p.payload.update), "remote");
 			},
 		);
 
 		this.activeChannel.subscribe((status: string) => {
 			if (status === "SUBSCRIBED" && this.ydoc) {
 				const sv = Y.encodeStateVector(this.ydoc);
-				const promise = this.activeChannel?.send({
+				void this.activeChannel?.send({
 					type: "broadcast",
 					event: "sync-step-1",
 					payload: { stateVector: Array.from(sv) },
 				});
-				if (promise) void promise;
 			}
 		});
 	}
 
 	// Fetch whichever is newer: local disk or DB row.
-	// This avoids seeding Yjs from a stale file when the peer already synced to DB
+	// Avoids seeding Yjs from a stale file when the peer already synced to DB
 	// but the local realtime pull hasn't fired yet.
 	private async getFreshContent(file: TFile): Promise<string> {
 		const diskContent = await this.plugin.app.vault.read(file);
@@ -161,27 +158,23 @@ export class RealtimeCrdtManager {
 				.single<{ content: string | null; mtime: number }>();
 
 			if (data && data.content !== null && data.mtime > diskMtime) {
-				// DB has newer content - patch the editor silently and return it
 				if (this.activeEditor) {
 					this.suppressNextEditorChange++;
 					this.activeEditor.setValue(data.content);
 				}
-				// Also persist to disk so subsequent reads are correct
 				try {
 					await this.plugin.app.vault.modify(file, data.content);
 				} catch {
-					// Non-fatal - editor already shows correct content
+					// Non-fatal – editor already shows correct content
 				}
 				return data.content;
 			}
 		} catch {
-			// Non-fatal - fall back to disk content
+			// Non-fatal – fall back to disk content
 		}
 
 		return diskContent;
 	}
-
-	// Broadcast helpers
 
 	private broadcastUpdate(update: Uint8Array) {
 		if (!this.activeChannel) return;
@@ -194,19 +187,15 @@ export class RealtimeCrdtManager {
 
 	private handleIncomingUpdate(payload: CRDTPayload) {
 		if (!this.ydoc || !payload.payload.update) return;
-		const update = new Uint8Array(payload.payload.update);
-		Y.applyUpdate(this.ydoc, update, "remote");
-		// The Y.Text observer (patchEditorFromYjs) will fire automatically.
+		Y.applyUpdate(this.ydoc, new Uint8Array(payload.payload.update), "remote");
 	}
 
-	// Patching the Obsidian editor from Y.Text (remote changes)
 	private patchEditorFromYjs() {
 		if (!this.ytext || !this.activeEditor) return;
 		const newText = String(this.ytext.toJSON());
 		const currentText = this.activeEditor.getValue();
 		if (newText === currentText) return;
 
-		// Find the minimal diff range
 		let start = 0;
 		while (
 			start < currentText.length &&
@@ -226,20 +215,15 @@ export class RealtimeCrdtManager {
 			endNew--;
 		}
 
-		// Convert character offsets to {line, ch} positions
 		const fromPos = this.offsetToPos(currentText, start);
 		const toPos = this.offsetToPos(currentText, endOld);
 		const replacement = newText.slice(start, endNew);
 
-		// Suppress the editor-change echo this will trigger
 		this.suppressNextEditorChange++;
 		this.activeEditor.replaceRange(replacement, fromPos, toPos);
 	}
 
-	// Yjs (local typing)
-
 	private handleEditorChange(editor: Editor) {
-		// Skip echoes from our own replaceRange calls
 		if (this.suppressNextEditorChange > 0) {
 			this.suppressNextEditorChange--;
 			return;
@@ -250,7 +234,6 @@ export class RealtimeCrdtManager {
 		const yjsText = String(this.ytext.toJSON());
 		if (currentText === yjsText) return;
 
-		// Find the minimal diff
 		let start = 0;
 		while (
 			start < yjsText.length &&
@@ -274,16 +257,10 @@ export class RealtimeCrdtManager {
 		const insertText = currentText.slice(start, endC);
 
 		this.ydoc.transact(() => {
-			if (deleteLen > 0) {
-				this.ytext!.delete(start, deleteLen);
-			}
-			if (insertText.length > 0) {
-				this.ytext!.insert(start, insertText);
-			}
+			if (deleteLen > 0) this.ytext!.delete(start, deleteLen);
+			if (insertText.length > 0) this.ytext!.insert(start, insertText);
 		}, "local");
 	}
-
-	// Utils
 
 	private offsetToPos(
 		text: string,
@@ -303,6 +280,14 @@ export class RealtimeCrdtManager {
 	}
 
 	private leaveCurrentChannel() {
+		// Persist the Yjs-merged state to disk before tearing down so that
+		// mtime-based conflict resolution sees up-to-date content on next sync.
+		if (this.activeFile && this.ytext) {
+			void this.plugin.app.vault
+				.modify(this.activeFile, this.ytext.toJSON())
+				.catch(() => {});
+		}
+
 		if (this.activeChannel) {
 			void this.activeChannel.unsubscribe();
 			this.activeChannel = null;

@@ -37,28 +37,43 @@ export const DEFAULT_SETTINGS: SupaBaseJumpSettings = {
 	lastSyncTime: 0,
 };
 
+const OS_SYSTEM_FILES = new Set([
+	".DS_Store",
+	"Thumbs.db",
+	"desktop.ini",
+	".localized",
+	".Spotlight-V100",
+	".Trashes",
+	".fseventsd",
+	".TemporaryItems",
+	"ehthumbs.db",
+	"ehthumbs_vista.db",
+]);
+
+export function isSystemFile(path: string): boolean {
+	const name = path.split("/").pop() ?? "";
+	return OS_SYSTEM_FILES.has(name);
+}
+
 export const BINARY_EXTENSIONS = new Set([
-	"png",
-	"jpg",
-	"jpeg",
-	"gif",
-	"webp",
-	"svg",
-	"bmp",
-	"pdf",
-	"mp3",
-	"mp4",
-	"wav",
-	"ogg",
-	"m4a",
-	"zip",
-	"docx",
-	"xlsx",
-	"pptx",
-	"ttf",
-	"otf",
-	"woff",
-	"woff2",
+	// Images
+	"png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif",
+	"heic", "heif", "avif",
+	// Audio / video
+	"mp3", "mp4", "wav", "ogg", "m4a", "flac", "aac", "avi", "mov", "mkv",
+	"webm",
+	// Documents / archives
+	"pdf", "zip", "tar", "gz", "bz2", "xz", "7z", "rar",
+	"docx", "xlsx", "pptx", "doc", "xls", "ppt",
+	// Fonts
+	"ttf", "otf", "woff", "woff2", "eot",
+	// Executables / libraries / system
+	"exe", "dll", "dylib", "so", "dmg", "pkg", "deb", "rpm", "apk", "ipa",
+	"class", "jar",
+	// Cryptographic / key material
+	"sig", "key", "p12", "pfx", "cer", "crt", "der", "p7b",
+	// Database / binary data
+	"db", "sqlite", "sqlite3", "bin", "dat", "raw",
 ]);
 
 export function isBinary(path: string): boolean {
@@ -162,7 +177,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("One-click project setup")
 			.setDesc(
-				"Creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket. Run once after creating your supabase project.",
+				"Creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket. Run once after creating your Supabase project.",
 			)
 			.addButton((btn) => {
 				btn.setButtonText("Run full setup").setCta();
@@ -279,7 +294,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Vault ID")
 			.setDesc(
-				"Unique identifier for this vault; files are namespaced under this ID in supabase storage; each vault syncing to the same supabase project needs a different ID",
+				"Unique identifier for this vault; files are namespaced under this ID in Supabase storage; each vault syncing to the same Supabase project needs a different ID",
 			)
 			.addText((text) => {
 				vaultIdText = text;
@@ -359,7 +374,6 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 				);
 		}
 
-		// Custom paths input for anything not in the list
 		const customPaths = this.plugin.settings.platformExcludedPaths.filter(
 			(p) => !WELL_KNOWN_PATHS.some((w) => w.path === p),
 		);

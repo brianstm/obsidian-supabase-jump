@@ -151,6 +151,9 @@ export default class SupaBaseJumpPlugin extends Plugin {
 		this.crdtManager.setSupabase(this.supabase, this.settings.vaultId);
 		this.crdtManager.start();
 
+		this.syncEngine.crdtIsActive = (path) =>
+			this.crdtManager.isActiveFile(path);
+
 		this.syncEngine.startRealtimeListener();
 		this.syncEngine.startConfigWatcher();
 

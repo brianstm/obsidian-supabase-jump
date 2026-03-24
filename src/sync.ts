@@ -1,6 +1,6 @@
 import { Notice, TFile, Vault, Platform } from "obsidian";
 import { SupabaseClient } from "@supabase/supabase-js";
-import { isBinary, isExcluded, isPlatformExcluded } from "./settings";
+import { isBinary, isExcluded, isPlatformExcluded, isSystemFile } from "./settings";
 import { parseFrontmatter } from "./frontmatter";
 import { SyncStatus } from "./supabase";
 
@@ -10,6 +10,12 @@ const DEBOUNCE_MS = 1000;
 const PULL_IGNORE_TTL = 1500;
 const CONFIG_WATCH_MS = 5000;
 const REALTIME_RECONNECT_MS = 5000;
+
+function stripNullBytes(s: string): string {
+	// Postgres text type rejects null bytes; strip them rather than crash.
+	// Using split/join avoids the no-control-regex lint rule.
+	return s.includes("\0") ? s.split("\0").join("") : s;
+}
 
 function toStoragePath(
 	userId: string,
@@ -81,6 +87,10 @@ export class SyncEngine {
 	private ignorePaths = new Set<string>();
 	private realtimeReconnectTimer: number | null = null;
 
+	// Injected by main.ts after both managers are created.
+	// Returns true while the CRDT broadcast channel owns that file's editing session.
+	crdtIsActive: ((path: string) => boolean) | null = null;
+
 	constructor(host: SyncHost) {
 		this.host = host;
 	}
@@ -99,6 +109,7 @@ export class SyncEngine {
 	}
 
 	private shouldSkip(filePath: string): boolean {
+		if (isSystemFile(filePath)) return true;
 		if (
 			!this.host.settings.syncConfigFolder &&
 			(filePath === this.host.vault.configDir ||
@@ -127,6 +138,17 @@ export class SyncEngine {
 			// Folder may already exist
 		}
 		return result;
+	}
+
+	private async getLocalMtime(path: string): Promise<number> {
+		const file = this.host.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) return file.stat.mtime;
+		try {
+			const stat = await this.host.vault.adapter.stat(path);
+			return stat?.mtime ?? 0;
+		} catch {
+			return 0;
+		}
 	}
 
 	private async pushAdapterFile(
@@ -167,7 +189,8 @@ export class SyncEngine {
 			if (dbErr)
 				throw new Error(`Metadata upsert failed - ${dbErr.message}`);
 		} else {
-			const content = await this.host.vault.adapter.read(filePath);
+			const raw = await this.host.vault.adapter.read(filePath);
+			const content = stripNullBytes(raw);
 
 			const isMarkdown = filePath.endsWith(".md");
 			const { properties, tags } = isMarkdown
@@ -305,6 +328,7 @@ export class SyncEngine {
 			);
 		}
 
+		content = stripNullBytes(content);
 		const isMarkdown = file.path.endsWith(".md");
 		const { properties, tags } = isMarkdown
 			? parseFrontmatter(content)
@@ -477,18 +501,13 @@ export class SyncEngine {
 				);
 
 			const remoteRows = (data as VaultFileRow[]) ?? [];
-			const localMap = new Map<string, TFile>(
-				this.host.vault
-					.getFiles()
-					.filter((f) => !this.shouldSkip(f.path))
-					.map((f) => [f.path, f]),
-			);
 
 			for (const row of remoteRows) {
 				if (this.shouldSkip(row.path)) continue;
 				if (!this.shouldPull(row)) continue;
-				const local = localMap.get(row.path);
-				if (!local || row.mtime > local.stat.mtime) {
+				if (this.crdtIsActive?.(row.path)) continue;
+				const localMtime = await this.getLocalMtime(row.path);
+				if (row.mtime > localMtime) {
 					try {
 						await this.pullFile(row);
 					} catch {
@@ -545,9 +564,6 @@ export class SyncEngine {
 			const localFiles = this.host.vault
 				.getFiles()
 				.filter((f) => !this.shouldSkip(f.path));
-			const localMap = new Map<string, TFile>(
-				localFiles.map((f) => [f.path, f]),
-			);
 
 			for (const file of localFiles) {
 				const remote = remoteMap.get(file.path);
@@ -589,8 +605,9 @@ export class SyncEngine {
 			for (const row of remoteRows) {
 				if (this.shouldSkip(row.path)) continue;
 				if (!this.shouldPull(row)) continue;
-				const local = localMap.get(row.path);
-				if (!local || row.mtime > local.stat.mtime) {
+				if (this.crdtIsActive?.(row.path)) continue;
+				const localMtime = await this.getLocalMtime(row.path);
+				if (row.mtime > localMtime) {
 					try {
 						await this.pullFile(row);
 					} catch {
@@ -687,10 +704,11 @@ export class SyncEngine {
 			return;
 		}
 
-		const localFile = this.host.vault.getAbstractFileByPath(row.path);
-		const localMtime =
-			localFile instanceof TFile ? localFile.stat.mtime : 0;
+		// While a CRDT broadcast session is active, Yjs handles merging;
+		// a raw DB pull here would overwrite the correctly merged editor state.
+		if (this.crdtIsActive?.(row.path)) return;
 
+		const localMtime = await this.getLocalMtime(row.path);
 		if (row.mtime > localMtime && this.shouldPull(row)) {
 			await this.pullFile(row);
 		}

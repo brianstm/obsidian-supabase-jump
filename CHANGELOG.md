@@ -5,6 +5,18 @@ All notable changes to SupaBase Jump will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-03-24
+
+### Fixed
+
+- `.DS_Store` and other OS system files (e.g. `Thumbs.db`, `desktop.ini`) are now silently skipped instead of crashing with a Postgres null-byte error
+- Binary extension list expanded to cover cryptographic signatures (`.sig`, `.key`, `.p12`), databases (`.db`, `.sqlite`), and executables so they are stored in Storage rather than the text column
+- Simultaneous edits on two devices no longer get overwritten: `postgres_changes` pulls are now skipped while a Yjs CRDT session is active, letting the CRDT broadcast layer own all merging during co-editing
+- Yjs-merged state is persisted to disk when closing a note so `mtime`-based conflict resolution sees up-to-date content on the next sync
+- `.obsidian/` and other config-dir files were always pulled (local `mtime` was treated as 0); now resolved using `vault.adapter.stat` for accurate comparison
+- Realtime channel reconnects automatically on `CHANNEL_ERROR`, `TIMED_OUT`, or `CLOSED` status
+- Push debounce reduced from 2 s to 1 s for snappier propagation
+
 ## [1.1.3] - 2026-03-19
 
 ### Fixed
