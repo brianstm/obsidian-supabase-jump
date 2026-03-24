@@ -177,7 +177,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("One-click project setup")
 			.setDesc(
-				"Creates the vault_files table, enables realtime, and creates the vault-attachments storage bucket. Run once after creating your Supabase project.",
+				"Creates the table, enables realtime, and creates the sattachments storage bucket. Run once after creating your supabase project.",
 			)
 			.addButton((btn) => {
 				btn.setButtonText("Run full setup").setCta();
@@ -294,7 +294,7 @@ export class SupaBaseJumpSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Vault ID")
 			.setDesc(
-				"Unique identifier for this vault; files are namespaced under this ID in Supabase storage; each vault syncing to the same Supabase project needs a different ID",
+				"Unique identifier for this vault, files are namespaced under this ID in supabase storage, each vault syncing to the same supabase project needs a different ID",
 			)
 			.addText((text) => {
 				vaultIdText = text;
