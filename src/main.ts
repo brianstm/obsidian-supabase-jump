@@ -72,7 +72,7 @@ function extractErrorMessage(body: string, status: number): string {
 		if (typeof parsed.message === "string") return parsed.message;
 		if (typeof parsed.error === "string") return parsed.error;
 	} catch {
-		// Ignore
+		// ignore
 	}
 	return body.trim() || `HTTP ${status}`;
 }
@@ -114,6 +114,7 @@ export default class SupaBaseJumpPlugin extends Plugin {
 		this.addSettingTab(new SupaBaseJumpSettingTab(this.app, this));
 		this.registerVaultEvents();
 		this.registerCommands();
+		this.registerResumeHandlers();
 
 		if (this.settings.supabaseUrl && this.settings.email) {
 			await this.initSupabase();
@@ -218,6 +219,17 @@ export default class SupaBaseJumpPlugin extends Plugin {
 						console.error("Supabase jump: Fetch error", err),
 					);
 			},
+		});
+	}
+
+	private registerResumeHandlers(): void {
+		this.registerDomEvent(document, "visibilitychange", () => {
+			if (document.visibilityState === "visible") {
+				void this.syncEngine.onAppResume();
+			}
+		});
+		this.registerDomEvent(window, "focus", () => {
+			void this.syncEngine.onAppResume();
 		});
 	}
 

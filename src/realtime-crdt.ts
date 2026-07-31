@@ -165,12 +165,12 @@ export class RealtimeCrdtManager {
 				try {
 					await this.plugin.app.vault.modify(file, data.content);
 				} catch {
-					// Non-fatal – editor already shows correct content
+					// ignore
 				}
 				return data.content;
 			}
 		} catch {
-			// Non-fatal – fall back to disk content
+			// ignore
 		}
 
 		return diskContent;

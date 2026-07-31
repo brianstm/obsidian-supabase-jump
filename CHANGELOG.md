@@ -5,6 +5,14 @@ All notable changes to SupaBase Jump will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.6] - 2026-07-31
+
+### Fixed
+
+- **iOS Realtime recovery** - When Obsidian is backgrounded or the screen dims, iOS kills the Realtime WebSocket. The plugin now reconnects on foreground resume (`visibilitychange` / `focus`), force-resets the socket, and runs a silent catch-up pull so external writes are not missed
+- **Fallback polling while disconnected** - If the Realtime channel stays down, a 15s silent `fetchOnly` loop keeps pulling remote changes until the channel resubscribes
+- Disconnect notices are throttled to once per 60s to avoid spam on iOS
+
 ## [1.1.5] - 2026-03-25
 
 ### Fixed

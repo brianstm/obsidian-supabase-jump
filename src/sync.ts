@@ -10,6 +10,8 @@ const DEBOUNCE_MS = 1000;
 const PULL_IGNORE_TTL = 1500;
 const CONFIG_WATCH_MS = 5000;
 const REALTIME_RECONNECT_MS = 5000;
+const FALLBACK_POLL_MS = 15000;
+const DISCONNECT_NOTICE_COOLDOWN_MS = 60000;
 
 function stripNullBytes(s: string): string {
 	// Postgres text type rejects null bytes; strip them rather than crash.
@@ -86,6 +88,10 @@ export class SyncEngine {
 	private configFileCache = new Map<string, number>();
 	private ignorePaths = new Set<string>();
 	private realtimeReconnectTimer: number | null = null;
+	private fallbackPollId: number | null = null;
+	private realtimeConnected = false;
+	private lastDisconnectNoticeAt = 0;
+	private resumeInFlight = false;
 
 	// Injected by main.ts after both managers are created.
 	// Returns true while the CRDT broadcast channel owns that file's editing session.
@@ -477,15 +483,18 @@ export class SyncEngine {
 		}
 	}
 
-	async fetchOnly(): Promise<void> {
+	async fetchOnly(opts?: { silent?: boolean }): Promise<void> {
+		const silent = opts?.silent ?? false;
 		const { vaultId } = this.host.settings;
 
 		if (!vaultId) {
-			new Notice("Supabase jump: vault ID is not set - cannot fetch");
+			if (!silent) {
+				new Notice("Supabase jump: vault ID is not set - cannot fetch");
+			}
 			return;
 		}
 
-		this.host.setStatus("syncing");
+		if (!silent) this.host.setStatus("syncing");
 		const errors: string[] = [];
 
 		try {
@@ -520,16 +529,22 @@ export class SyncEngine {
 			await this.host.saveSettings();
 			this.host.setStatus("synced");
 
-			const s = errors.length;
-			const suffix =
-				s > 0 ? ` (${s} error${s > 1 ? "s" : ""} - see console)` : "";
-			new Notice(`Supabase jump: Fetch complete${suffix}`);
+			if (!silent) {
+				const s = errors.length;
+				const suffix =
+					s > 0
+						? ` (${s} error${s > 1 ? "s" : ""} - see console)`
+						: "";
+				new Notice(`Supabase jump: Fetch complete${suffix}`);
+			}
 		} catch (err) {
 			console.error("Supabase jump: fetchOnly failed", err);
 			this.host.setStatus("error");
-			new Notice(
-				`Supabase jump: Fetch failed - ${err instanceof Error ? err.message : String(err)}`,
-			);
+			if (!silent) {
+				new Notice(
+					`Supabase jump: Fetch failed - ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
 		}
 	}
 
@@ -636,7 +651,7 @@ export class SyncEngine {
 
 	startRealtimeListener(): void {
 		const { vaultId } = this.host.settings;
-		if (!vaultId) return;
+		if (!vaultId || !this.host.supabase) return;
 
 		this.client
 			.channel(`vault-${vaultId}`)
@@ -661,26 +676,108 @@ export class SyncEngine {
 				},
 			)
 			.subscribe((status: string) => {
-				if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+				if (
+					status === "CHANNEL_ERROR" ||
+					status === "TIMED_OUT" ||
+					status === "CLOSED"
+				) {
+					this.realtimeConnected = false;
+					this.host.setStatus("error");
+					this.startFallbackPoll();
 					console.error(
 						`Supabase jump: Realtime channel ${status.toLowerCase()} - reconnecting in ${REALTIME_RECONNECT_MS / 1000}s`,
 					);
-					this.host.setStatus("error");
-					new Notice(
-						`Supabase jump: Realtime disconnected - reconnecting in ${REALTIME_RECONNECT_MS / 1000}s…`,
-					);
-					if (this.realtimeReconnectTimer !== null) return;
-					this.realtimeReconnectTimer = window.setTimeout(() => {
-						this.realtimeReconnectTimer = null;
-						if (!this.client) return;
-						void this.client.removeAllChannels().then(() => {
-							this.startRealtimeListener();
-						});
-					}, REALTIME_RECONNECT_MS);
+					const now = Date.now();
+					if (
+						now - this.lastDisconnectNoticeAt >=
+						DISCONNECT_NOTICE_COOLDOWN_MS
+					) {
+						this.lastDisconnectNoticeAt = now;
+						new Notice(
+							`Supabase jump: Realtime disconnected - reconnecting in ${REALTIME_RECONNECT_MS / 1000}s…`,
+						);
+					}
+					this.scheduleRealtimeReconnect();
 				} else if (status === "SUBSCRIBED") {
+					this.realtimeConnected = true;
+					this.stopFallbackPoll();
 					this.host.setStatus("synced");
 				}
 			});
+	}
+
+	private scheduleRealtimeReconnect(): void {
+		if (this.realtimeReconnectTimer !== null) return;
+		this.realtimeReconnectTimer = window.setTimeout(() => {
+			this.realtimeReconnectTimer = null;
+			void this.forceRealtimeReconnect();
+		}, REALTIME_RECONNECT_MS);
+	}
+
+	private startFallbackPoll(): void {
+		if (this.fallbackPollId !== null) return;
+		this.fallbackPollId = window.setInterval(() => {
+			void this.fetchOnly({ silent: true }).catch((err) =>
+				console.error("Supabase jump: Fallback poll error", err),
+			);
+		}, FALLBACK_POLL_MS);
+	}
+
+	private stopFallbackPoll(): void {
+		if (this.fallbackPollId !== null) {
+			window.clearInterval(this.fallbackPollId);
+			this.fallbackPollId = null;
+		}
+	}
+
+	async forceRealtimeReconnect(): Promise<void> {
+		const client = this.host.supabase;
+		if (!client) return;
+
+		if (this.realtimeReconnectTimer !== null) {
+			window.clearTimeout(this.realtimeReconnectTimer);
+			this.realtimeReconnectTimer = null;
+		}
+
+		this.realtimeConnected = false;
+		try {
+			await client.removeAllChannels();
+		} catch {
+			// ignore
+		}
+		try {
+			client.realtime.disconnect();
+		} catch {
+			// ignore
+		}
+		try {
+			client.realtime.connect();
+		} catch {
+			// ignore
+		}
+		this.startRealtimeListener();
+	}
+
+	/**
+	 * Called when the app returns to the foreground (iOS background/dim kills
+	 * the Realtime WebSocket). Forces a socket reconnect and a catch-up pull
+	 * so external writes are not missed while Realtime was down.
+	 */
+	async onAppResume(): Promise<void> {
+		if (!this.host.supabase) return;
+		if (this.resumeInFlight) return;
+
+		this.resumeInFlight = true;
+		try {
+			if (Platform.isMobile || !this.realtimeConnected) {
+				await this.forceRealtimeReconnect();
+			}
+			await this.fetchOnly({ silent: true });
+		} catch (err) {
+			console.error("Supabase jump: Resume recovery failed", err);
+		} finally {
+			this.resumeInFlight = false;
+		}
 	}
 
 	private async handleRealtimeEvent(payload: {
@@ -849,6 +946,9 @@ export class SyncEngine {
 			window.clearTimeout(this.realtimeReconnectTimer);
 			this.realtimeReconnectTimer = null;
 		}
+		this.stopFallbackPoll();
+		this.realtimeConnected = false;
+		this.resumeInFlight = false;
 		this.changeQueue.clear();
 		this.configFileCache.clear();
 		this.ignorePaths.clear();
