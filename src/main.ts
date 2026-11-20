@@ -1,396 +1,491 @@
+import { Menu, Notice, Plugin, TAbstractFile, TFile, TFolder, normalizePath, requestUrl } from "obsidian";
 import {
-	Notice,
-	Plugin,
-	requestUrl,
-	TAbstractFile,
-	TFile,
-	Vault,
-} from "obsidian";
-
-const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS vault_files (
-  id           text primary key,
-  vault_id     text not null,
-  path         text not null,
-  content      text,
-  storage_path text,
-  is_binary    boolean default false,
-  frontmatter  jsonb,
-  tags         text[],
-  mtime        bigint not null,
-  ctime        bigint not null,
-  size         bigint not null,
-  deleted      boolean default false,
-  updated_at   timestamptz default now(),
-  user_id      uuid references auth.users(id),
-  platform     text default 'all'
-);
-ALTER TABLE vault_files ADD COLUMN IF NOT EXISTS frontmatter jsonb;
-ALTER TABLE vault_files ADD COLUMN IF NOT EXISTS tags text[];
-ALTER TABLE vault_files ADD COLUMN IF NOT EXISTS platform text DEFAULT 'all';
-CREATE INDEX IF NOT EXISTS vault_files_vault_path ON vault_files(vault_id, path);
-CREATE INDEX IF NOT EXISTS vault_files_vault_mtime ON vault_files(vault_id, mtime);
-CREATE INDEX IF NOT EXISTS vault_files_tags ON vault_files USING gin(tags);
-ALTER TABLE vault_files ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename='vault_files' AND policyname='Users manage own vault'
-  ) THEN
-    CREATE POLICY "Users manage own vault" ON vault_files FOR ALL
-      USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-  END IF;
-END $$;
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname='supabase_realtime' AND tablename='vault_files'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE vault_files;
-  END IF;
-END $$;
-`.trim();
-
-const STORAGE_RLS_SQL = `
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename='objects' AND schemaname='storage'
-    AND policyname='Users manage own attachments'
-  ) THEN
-    CREATE POLICY "Users manage own attachments"
-      ON storage.objects FOR ALL
-      USING (auth.uid()::text = (storage.foldername(name))[1])
-      WITH CHECK (auth.uid()::text = (storage.foldername(name))[1]);
-  END IF;
-END $$;
-`.trim();
-
-function extractErrorMessage(body: string, status: number): string {
-	try {
-		const parsed = JSON.parse(body) as Record<string, unknown>;
-		if (typeof parsed.message === "string") return parsed.message;
-		if (typeof parsed.error === "string") return parsed.error;
-	} catch {
-		// ignore
-	}
-	return body.trim() || `HTTP ${status}`;
-}
-import { SupabaseClient } from "@supabase/supabase-js";
-import {
+	ACCESS_TOKEN_SECRET_ID,
 	DEFAULT_SETTINGS,
+	PASSWORD_SECRET_ID,
 	SupaBaseJumpSettings,
-	SupaBaseJumpSettingTab,
+	defaultDeviceName,
+	isBinary,
 } from "./settings";
-import { SupabaseManager, SyncStatus } from "./supabase";
-import { SyncEngine, VaultFileRow } from "./sync";
-import { RealtimeCrdtManager } from "./realtime-crdt";
+import { SupaBaseJumpSettingTab } from "./settings-tab";
+import { Connection, ConnectionState } from "./supabase";
+import { SyncEngine } from "./sync";
+import { LiveManager } from "./live/manager";
+import { liveExtension } from "./live/binding";
+import { StatusBar, StatusInfo } from "./status";
+import { DeletedFilesModal, HistoryModal } from "./history";
+import { SETUP_SQL } from "./schema";
+import { errorMessage, randomId } from "./utils";
 
 export default class SupaBaseJumpPlugin extends Plugin {
-	settings: SupaBaseJumpSettings;
-	statusBarItem: HTMLElement;
+	settings: SupaBaseJumpSettings = { ...DEFAULT_SETTINGS };
+	connection!: Connection;
+	sync!: SyncEngine;
+	live!: LiveManager;
 
-	private manager: SupabaseManager;
-	private syncEngine: SyncEngine;
-	private crdtManager: RealtimeCrdtManager;
+	private statusBar: StatusBar | null = null;
+	private ribbonEl: HTMLElement | null = null;
+	private statusTimer: number | null = null;
+	private servicesRunning = false;
+	private startedOnce = false;
+	private settingTab: SupaBaseJumpSettingTab | null = null;
 
-	get supabase(): SupabaseClient | null {
-		return this.manager.client;
+	get pluginDir(): string {
+		return this.manifest.dir ?? normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}`);
 	}
 
-	get vault(): Vault {
-		return this.app.vault;
-	}
-
-	async onload() {
+	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		this.statusBarItem = this.addStatusBarItem();
-		this.manager = new SupabaseManager(this);
-		this.manager.setStatus("offline");
-		this.syncEngine = new SyncEngine(this);
-		this.crdtManager = new RealtimeCrdtManager(this);
+		this.connection = new Connection({
+			settings: this.settings,
+			getPassword: () => this.getPassword(),
+		});
+		this.sync = new SyncEngine({
+			app: this.app,
+			settings: this.settings,
+			connection: this.connection,
+			saveSettings: () => this.saveSettings(),
+			onActivity: () => this.queueStatus(),
+			pluginDir: this.pluginDir,
+		});
+		this.live = new LiveManager({
+			app: this.app,
+			settings: this.settings,
+			connection: this.connection,
+			sync: this.sync,
+			onPeersChanged: () => this.queueStatus(),
+		});
+		this.sync.live = this.live;
 
-		this.addSettingTab(new SupaBaseJumpSettingTab(this.app, this));
-		this.registerVaultEvents();
+		this.registerEditorExtension(liveExtension(this.live));
+
+		const statusEl = this.addStatusBarItem();
+		this.statusBar = new StatusBar(statusEl);
+		this.registerDomEvent(statusEl, "click", (evt) => this.openMenu(evt));
+
+		this.ribbonEl = this.addRibbonIcon("refresh-cw", "Supabase jump", (evt) => this.openMenu(evt));
+		this.ribbonEl.toggle(this.settings.showRibbonIcon);
+
+		this.settingTab = new SupaBaseJumpSettingTab(this.app, this);
+		this.addSettingTab(this.settingTab);
 		this.registerCommands();
-		this.registerResumeHandlers();
+		this.registerFileMenu();
 
-		if (this.settings.supabaseUrl && this.settings.email) {
-			await this.initSupabase();
+		this.register(this.connection.onChange((state) => this.onConnectionChange(state)));
+		this.renderStatus();
+
+		this.app.workspace.onLayoutReady(() => {
+			this.registerVaultEvents();
+			this.registerResumeEvents();
+			this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.queueStatus()));
+			void this.boot();
+		});
+	}
+
+	onunload(): void {
+		this.stopServices();
+		this.connection.dispose();
+		if (this.statusTimer !== null) window.clearTimeout(this.statusTimer);
+	}
+
+	private async boot(): Promise<void> {
+		await this.sync.loadState();
+		if (this.isConfigured()) await this.connection.connect();
+	}
+
+	isConfigured(): boolean {
+		const s = this.settings;
+		return Boolean(s.supabaseUrl && s.supabaseAnonKey && s.email && this.getPassword());
+	}
+
+	async loadSettings(): Promise<void> {
+		const raw = ((await this.loadData()) ?? {}) as Partial<SupaBaseJumpSettings>;
+		Object.assign(this.settings, DEFAULT_SETTINGS, raw);
+		let changed = false;
+
+		if (!this.settings.deviceId) {
+			this.settings.deviceId = randomId(16);
+			changed = true;
 		}
+		if (!this.settings.deviceName) {
+			this.settings.deviceName = defaultDeviceName();
+			changed = true;
+		}
+
+		const secrets = this.app.secretStorage;
+		if (raw.password) {
+			if (!this.settings.passwordSecret) {
+				secrets.setSecret(PASSWORD_SECRET_ID, raw.password);
+				this.settings.passwordSecret = PASSWORD_SECRET_ID;
+			}
+			delete this.settings.password;
+			changed = true;
+		}
+		if (raw.personalAccessToken) {
+			if (!this.settings.accessTokenSecret) {
+				secrets.setSecret(ACCESS_TOKEN_SECRET_ID, raw.personalAccessToken);
+				this.settings.accessTokenSecret = ACCESS_TOKEN_SECRET_ID;
+			}
+			delete this.settings.personalAccessToken;
+			changed = true;
+		}
+		if (this.settings.platformExcludedPaths.includes("workspace.json")) {
+			this.settings.platformExcludedPaths = this.settings.platformExcludedPaths.filter((p) => p !== "workspace.json");
+			this.settings.syncWorkspace = true;
+			changed = true;
+		}
+
+		if (changed) await this.saveSettings();
 	}
 
-	onunload() {
-		this.cleanup();
-	}
-
-	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<SupaBaseJumpSettings>,
-		);
-	}
-
-	async saveSettings() {
+	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 	}
 
-	setStatus(status: SyncStatus): void {
-		this.manager.setStatus(status);
+	getPassword(): string {
+		const id = this.settings.passwordSecret;
+		return id ? (this.app.secretStorage.getSecret(id) ?? "") : "";
 	}
 
-	async initSupabase(): Promise<void> {
-		this.syncEngine.stopAll();
-		this.crdtManager.stop();
-
-		await this.manager.init();
-
-		if (!this.supabase) return; // connection failed - manager already reported error
-
-		this.crdtManager.setSupabase(this.supabase, this.settings.vaultId);
-		this.crdtManager.start();
-
-		this.syncEngine.crdtIsActive = (path) =>
-			this.crdtManager.isActiveFile(path);
-
-		this.syncEngine.startRealtimeListener();
-		this.syncEngine.startConfigWatcher();
-
-		if (this.settings.syncIntervalMinutes > 0) {
-			this.syncEngine.startAutoSync();
-		}
-
-		if (this.settings.syncOnStartup) {
-			this.syncEngine
-				.fullSync()
-				.catch((err) =>
-					console.error("Supabase jump: Startup sync error", err),
-				);
-		}
+	getAccessToken(): string {
+		const id = this.settings.accessTokenSecret;
+		return id ? (this.app.secretStorage.getSecret(id) ?? "") : "";
 	}
 
-	async signIn(): Promise<void> {
-		await this.manager.signIn();
+	async onSettingChanged(key: string): Promise<void> {
+		switch (key) {
+			case "vaultId":
+				if (this.servicesRunning) {
+					this.stopServices();
+					await this.sync.loadState();
+					this.startServices();
+				} else {
+					await this.sync.loadState();
+				}
+				break;
+			case "syncIntervalMinutes":
+				if (this.servicesRunning) this.sync.startAutoSync();
+				break;
+			case "syncConfigFolder":
+				if (this.servicesRunning) this.sync.startConfigWatcher();
+				break;
+			case "liveEditing":
+			case "deviceName":
+				this.live.disable();
+				if (this.servicesRunning) this.live.enable();
+				break;
+			case "showCursors":
+			case "showPresence":
+				this.live.refreshUi();
+				break;
+			case "showRibbonIcon":
+				this.ribbonEl?.toggle(this.settings.showRibbonIcon);
+				break;
+		}
+		this.queueStatus();
+	}
+
+	async connect(): Promise<void> {
+		this.stopServices();
+		await this.connection.signOut();
+		await this.connection.connect(true);
 	}
 
 	async signOut(): Promise<void> {
-		this.syncEngine.stopAll();
-		this.crdtManager.stop();
-		await this.manager.signOut();
+		this.stopServices();
+		await this.connection.signOut();
+		new Notice("Supabase jump: signed out");
 	}
 
-	cleanup(): void {
-		this.syncEngine.stopAll();
-		this.crdtManager.stop();
-		this.manager.cleanup();
+	private onConnectionChange(state: ConnectionState): void {
+		if (state === "online") this.startServices();
+		else if (state === "signed-out") this.stopServices();
+		this.queueStatus();
+		this.settingTab?.refresh();
+	}
+
+	private startServices(): void {
+		if (!this.connection.ready) return;
+		if (!this.settings.vaultId) {
+			new Notice("Supabase jump: connected. Set a vault ID in settings to start syncing.", 8000);
+			return;
+		}
+		if (this.servicesRunning) {
+			this.sync.startRealtime();
+			this.live.resync();
+			void this.sync.fetchChanges();
+			this.sync.scheduleFlush(0);
+			return;
+		}
+		this.servicesRunning = true;
+		this.sync.startRealtime();
+		this.sync.startConfigWatcher();
+		this.sync.startAutoSync();
+		this.live.enable();
+
+		const first = !this.startedOnce;
+		this.startedOnce = true;
+		if (first && this.settings.syncOnStartup) void this.sync.fullSync({ silent: true });
+		else void this.sync.fetchChanges();
+		this.sync.scheduleFlush(0);
+	}
+
+	private stopServices(): void {
+		if (!this.servicesRunning) return;
+		this.servicesRunning = false;
+		this.live.disable();
+		this.sync.stop();
+	}
+
+	private registerResumeEvents(): void {
+		const doc = activeDocument;
+		this.registerDomEvent(doc, "visibilitychange", () => {
+			if (doc.visibilityState === "visible") void this.onResume();
+			else this.connection.pause();
+		});
+		this.registerDomEvent(window, "online", () => void this.onResume());
+		this.registerDomEvent(window, "offline", () => this.connection.markOffline());
+		this.registerDomEvent(window, "focus", () => void this.onResume());
+	}
+
+	private resumeAt = 0;
+
+	private async onResume(): Promise<void> {
+		const now = Date.now();
+		if (now - this.resumeAt < 2000) return;
+		this.resumeAt = now;
+		if (!this.isConfigured()) return;
+		await this.connection.resume();
+		if (this.connection.ready && this.servicesRunning) {
+			this.live.resync();
+			await this.sync.resume();
+		}
+	}
+
+	private registerVaultEvents(): void {
+		const { vault } = this.app;
+		this.registerEvent(
+			vault.on("create", (file: TAbstractFile) => {
+				if (file instanceof TFile) this.sync.onLocalCreateOrModify(file.path);
+			}),
+		);
+		this.registerEvent(
+			vault.on("modify", (file: TAbstractFile) => {
+				if (file instanceof TFile) this.sync.onLocalCreateOrModify(file.path);
+			}),
+		);
+		this.registerEvent(
+			vault.on("delete", (file: TAbstractFile) => {
+				this.sync.onLocalDelete(file.path, file instanceof TFolder);
+			}),
+		);
+		this.registerEvent(
+			vault.on("rename", (file: TAbstractFile, oldPath: string) => {
+				if (file instanceof TFile || file instanceof TFolder) this.sync.onLocalRename(file, oldPath);
+			}),
+		);
+	}
+
+	private queueStatus(): void {
+		if (this.statusTimer !== null) return;
+		this.statusTimer = window.setTimeout(() => {
+			this.statusTimer = null;
+			this.renderStatus();
+		}, 150);
+	}
+
+	private statusInfo(): StatusInfo {
+		const state = this.connection?.state ?? "signed-out";
+		const active = this.app.workspace.getActiveFile();
+		const peers = this.live?.peersFor(active?.path ?? null).map((p) => p.name) ?? [];
+		let kind: StatusInfo["kind"];
+		if (state === "online") kind = this.sync.busy ? "syncing" : "synced";
+		else if (state === "connecting") kind = "connecting";
+		else if (state === "offline") kind = "offline";
+		else if (state === "error") kind = "error";
+		else kind = "signed-out";
+		return {
+			kind,
+			pending: this.sync?.pendingCount ?? 0,
+			peers,
+			lastSync: this.settings.lastSyncTime,
+			realtime: this.sync?.realtimeUp ?? false,
+			error: this.connection?.lastError ?? "",
+		};
+	}
+
+	private renderStatus(): void {
+		this.statusBar?.render(this.statusInfo());
+	}
+
+	statusText(): string {
+		const info = this.statusInfo();
+		const parts: string[] = [];
+		switch (info.kind) {
+			case "synced":
+				parts.push("Everything is synced.");
+				break;
+			case "syncing":
+				parts.push("Syncing right now.");
+				break;
+			case "offline":
+				parts.push("You're offline. Changes will upload when you're back online.");
+				break;
+			case "connecting":
+				parts.push("Connecting.");
+				break;
+			case "error":
+				parts.push(`Something went wrong. ${info.error}`);
+				break;
+			default:
+				parts.push("Not connected.");
+		}
+		if (info.pending > 0) parts.push(`${info.pending} change${info.pending > 1 ? "s" : ""} waiting to upload.`);
+		if (info.peers.length > 0) parts.push(`Editing this note with ${info.peers.join(", ")}.`);
+		return parts.join(" ");
+	}
+
+	private openMenu(evt: MouseEvent): void {
+		const menu = new Menu();
+		const ready = this.connection.ready;
+		menu.addItem((i) => i.setTitle(this.statusText()).setIcon("info").setDisabled(true));
+		menu.addSeparator();
+		if (ready) {
+			menu.addItem((i) => i.setTitle("Sync now").setIcon("refresh-cw").onClick(() => void this.sync.fullSync()));
+			menu.addItem((i) =>
+				i.setTitle("Check for changes").setIcon("download").onClick(() => void this.sync.fetchChanges({ silent: false })),
+			);
+			const file = this.app.workspace.getActiveFile();
+			if (file && !isBinary(file.path)) {
+				menu.addItem((i) => i.setTitle("Version history").setIcon("history").onClick(() => this.openHistory(file)));
+			}
+			menu.addItem((i) => i.setTitle("Restore a deleted note").setIcon("archive-restore").onClick(() => void this.openDeleted()));
+		}
+		menu.addItem((i) =>
+			i
+				.setTitle(ready ? "Reconnect" : "Connect")
+				.setIcon("plug")
+				.onClick(() => void this.connect()),
+		);
+		menu.showAtMouseEvent(evt);
 	}
 
 	private registerCommands(): void {
 		this.addCommand({
 			id: "show-sync-status",
 			name: "Show sync status",
-			callback: () => {
-				const label = this.statusBarItem.getText();
-				new Notice(`Supabase jump: ${label || "status unavailable"}`);
-			},
+			callback: () => new Notice(`Supabase jump: ${this.statusText()}`),
 		});
-
 		this.addCommand({
 			id: "force-sync",
-			name: "Force sync now",
-			callback: () => {
-				this.syncEngine
-					.fullSync()
-					.catch((err) =>
-						console.error("Supabase jump: Force sync error", err),
-					);
-			},
+			name: "Sync now",
+			callback: () => void this.sync.fullSync(),
 		});
-
 		this.addCommand({
 			id: "fetch-now",
-			name: "Fetch from database",
-			callback: () => {
-				this.syncEngine
-					.fetchOnly()
-					.catch((err) =>
-						console.error("Supabase jump: Fetch error", err),
-					);
+			name: "Check for changes",
+			callback: () => void this.sync.fetchChanges({ silent: false }),
+		});
+		this.addCommand({
+			id: "file-history",
+			name: "Show version history of this note",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || isBinary(file.path) || !this.connection.ready) return false;
+				if (!checking) this.openHistory(file);
+				return true;
 			},
 		});
-	}
-
-	private registerResumeHandlers(): void {
-		this.registerDomEvent(document, "visibilitychange", () => {
-			if (document.visibilityState === "visible") {
-				void this.syncEngine.onAppResume();
-			}
+		this.addCommand({
+			id: "restore-deleted",
+			name: "Restore a deleted note",
+			checkCallback: (checking) => {
+				if (!this.connection.ready) return false;
+				if (!checking) void this.openDeleted();
+				return true;
+			},
 		});
-		this.registerDomEvent(window, "focus", () => {
-			void this.syncEngine.onAppResume();
+		this.addCommand({
+			id: "reconnect",
+			name: "Reconnect",
+			callback: () => void this.connect(),
+		});
+		this.addCommand({
+			id: "copy-setup-sql",
+			name: "Copy database setup SQL",
+			callback: () => void this.copySetupSql(),
 		});
 	}
 
-	private registerVaultEvents(): void {
+	private registerFileMenu(): void {
 		this.registerEvent(
-			this.app.vault.on("create", (file: TAbstractFile) => {
-				if (file instanceof TFile) {
-					this.syncEngine.queueChange(file.path, "push");
-				}
+			this.app.workspace.on("file-menu", (menu, file) => {
+				if (!(file instanceof TFile) || isBinary(file.path) || !this.connection.ready) return;
+				menu.addItem((i) =>
+					i
+						.setTitle("Version history")
+						.setIcon("history")
+						.setSection("info")
+						.onClick(() => this.openHistory(file)),
+				);
 			}),
 		);
-
-		this.registerEvent(
-			this.app.vault.on("modify", (file: TAbstractFile) => {
-				if (file instanceof TFile) {
-					this.syncEngine.queueChange(file.path, "push");
-				}
-			}),
-		);
-
-		this.registerEvent(
-			this.app.vault.on("delete", (file: TAbstractFile) => {
-				if (file instanceof TFile) {
-					this.syncEngine.queueChange(file.path, "delete");
-				}
-			}),
-		);
-
-		this.registerEvent(
-			this.app.vault.on(
-				"rename",
-				(file: TAbstractFile, oldPath: string) => {
-					if (file instanceof TFile) {
-						this.syncEngine.queueChange(oldPath, "delete");
-						this.syncEngine.queueChange(file.path, "push");
-					}
-				},
-			),
-		);
 	}
 
-	async pushFile(file: TFile): Promise<void> {
-		await this.syncEngine.pushFile(file);
+	openHistory(file: TFile): void {
+		new HistoryModal(this.app, this.sync, file).open();
 	}
 
-	async pullFile(row: VaultFileRow): Promise<void> {
-		await this.syncEngine.pullFile(row);
-	}
-
-	async deleteRemoteFile(path: string): Promise<void> {
-		await this.syncEngine.deleteRemoteFile(path);
-	}
-
-	async ensureFolder(filePath: string): Promise<void> {
-		await this.syncEngine.ensureFolder(filePath);
-	}
-
-	async fullSync(): Promise<void> {
-		await this.syncEngine.fullSync();
-	}
-
-	async fetchNow(): Promise<void> {
-		await this.syncEngine.fetchOnly();
-	}
-
-	async initializeSchema(onProgress: (step: number) => void): Promise<void> {
-		const { supabaseUrl, personalAccessToken } = this.settings;
-
-		if (!supabaseUrl) throw new Error("Project URL is required.");
-		if (!personalAccessToken)
-			throw new Error("Personal Access Token is required.");
-
-		const ref = new URL(supabaseUrl).hostname.split(".")[0];
-
-		const headers: Record<string, string> = {
-			Authorization: `Bearer ${personalAccessToken}`,
-			"Content-Type": "application/json",
-		};
-
-		const dbQueryUrl = `https://api.supabase.com/v1/projects/${ref}/database/query`;
-		const bucketsUrl = `https://api.supabase.com/v1/projects/${ref}/storage/buckets`;
-
-		const runSQL = async (query: string): Promise<void> => {
-			const res = await requestUrl({
-				url: dbQueryUrl,
-				method: "POST",
-				headers,
-				body: JSON.stringify({ query }),
-				throw: false,
-			});
-			if (res.status < 200 || res.status >= 300) {
-				throw new Error(extractErrorMessage(res.text, res.status));
-			}
-		};
-
-		onProgress(1);
+	async openDeleted(): Promise<void> {
 		try {
-			await runSQL(SCHEMA_SQL);
+			const rows = await this.sync.listDeleted();
+			new DeletedFilesModal(this.app, this.sync, rows).open();
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.error("Supabase jump: Setup step 1 failed", err);
-			new Notice(`Setup failed at step 1: ${msg}`, 10000);
-			throw err;
+			new Notice(`Supabase jump: could not load deleted notes. ${errorMessage(err)}`);
 		}
+	}
 
-		onProgress(2);
-		{
-			let bucketOk = false;
+	async copySetupSql(): Promise<void> {
+		await navigator.clipboard.writeText(SETUP_SQL);
+		new Notice("Setup SQL copied. Paste it into the Supabase SQL editor and run it.");
+	}
+
+	async runSetup(): Promise<void> {
+		const token = this.getAccessToken();
+		const url = this.settings.supabaseUrl;
+		if (!url) throw new Error("Add your project URL first.");
+		if (!token) throw new Error("Add a personal access token first.");
+
+		let host: string;
+		try {
+			host = new URL(url).hostname;
+		} catch {
+			throw new Error("The project URL doesn't look right.");
+		}
+		if (!host.endsWith(".supabase.co")) {
+			throw new Error("One-click setup only works with projects on supabase.com. Copy the setup SQL and run it in your SQL editor instead.");
+		}
+		const ref = host.split(".")[0];
+
+		const res = await requestUrl({
+			url: `https://api.supabase.com/v1/projects/${ref}/database/query`,
+			method: "POST",
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			body: JSON.stringify({ query: SETUP_SQL }),
+			throw: false,
+		});
+		if (res.status < 200 || res.status >= 300) {
+			let msg = res.text.trim() || `HTTP ${res.status}`;
 			try {
-				const res = await requestUrl({
-					url: bucketsUrl,
-					method: "POST",
-					headers,
-					body: JSON.stringify({
-						id: "vault-attachments",
-						name: "vault-attachments",
-						public: false,
-					}),
-					throw: false,
-				});
-				bucketOk =
-					res.status === 409 ||
-					(res.status >= 200 && res.status < 300);
-				if (!bucketOk) {
-					const msg = extractErrorMessage(res.text, res.status);
-					console.warn(
-						"Supabase jump: bucket creation via API failed -",
-						msg,
-					);
-				}
-			} catch (err) {
-				console.warn(
-					"Supabase jump: Bucket creation request failed -",
-					err,
-				);
+				const parsed = JSON.parse(res.text) as { message?: unknown; error?: unknown };
+				if (typeof parsed.message === "string") msg = parsed.message;
+				else if (typeof parsed.error === "string") msg = parsed.error;
+			} catch {
+				// keep the raw text
 			}
-
-			if (!bucketOk) {
-				new Notice(
-					"Supabase jump: Could not auto-create Storage bucket.\n\n" +
-					"Create it manually: Supabase \u2192 Storage \u2192 New bucket\n" +
-					"  Name: vault-attachments\n" +
-					"  Public: OFF\n\n" +
-					"Then continue - The RLS policy was applied in step 3.",
-					14000,
-				);
-			}
+			throw new Error(msg);
 		}
-
-		onProgress(3);
-		try {
-			await runSQL(STORAGE_RLS_SQL);
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.error("Supabase jump: Setup Step 3 failed", err);
-			new Notice(`Setup failed at step 3: ${msg}`, 10000);
-			throw err;
-		}
-
-		new Notice(
-			"Supabase jump: all set - table, bucket, and realtime enabled ✓",
-		);
+		this.sync.resetSchemaCheck();
 	}
 }

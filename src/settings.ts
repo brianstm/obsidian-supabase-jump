@@ -1,41 +1,68 @@
-import {
-	App,
-	Notice,
-	Plugin,
-	PluginSettingTab,
-	Setting,
-	TextComponent,
-} from "obsidian";
+import { Platform } from "obsidian";
+
+export type ConflictMode = "keep-both" | "newest";
 
 export interface SupaBaseJumpSettings {
 	supabaseUrl: string;
 	supabaseAnonKey: string;
-	personalAccessToken: string;
 	email: string;
-	password: string;
+	passwordSecret: string;
+	accessTokenSecret: string;
 	vaultId: string;
+	deviceId: string;
+	deviceName: string;
 	syncOnStartup: boolean;
 	syncConfigFolder: boolean;
+	syncWorkspace: boolean;
 	syncIntervalMinutes: number;
+	maxFileSizeMB: number;
 	excludedFolders: string[];
 	platformExcludedPaths: string[];
+	conflictMode: ConflictMode;
+	liveEditing: boolean;
+	showCursors: boolean;
+	showPresence: boolean;
+	showRibbonIcon: boolean;
 	lastSyncTime: number;
+	password?: string;
+	personalAccessToken?: string;
 }
 
 export const DEFAULT_SETTINGS: SupaBaseJumpSettings = {
 	supabaseUrl: "",
 	supabaseAnonKey: "",
-	personalAccessToken: "",
 	email: "",
-	password: "",
+	passwordSecret: "",
+	accessTokenSecret: "",
 	vaultId: "",
-	syncOnStartup: false,
+	deviceId: "",
+	deviceName: "",
+	syncOnStartup: true,
 	syncConfigFolder: true,
+	syncWorkspace: false,
 	syncIntervalMinutes: 5,
+	maxFileSizeMB: 50,
 	excludedFolders: [],
 	platformExcludedPaths: [],
+	conflictMode: "keep-both",
+	liveEditing: true,
+	showCursors: true,
+	showPresence: true,
+	showRibbonIcon: true,
 	lastSyncTime: 0,
 };
+
+export const PASSWORD_SECRET_ID = "supabase-jump-password";
+export const ACCESS_TOKEN_SECRET_ID = "supabase-jump-access-token";
+
+export function defaultDeviceName(): string {
+	if (Platform.isIosApp) return Platform.isTablet ? "iPad" : "iPhone";
+	if (Platform.isAndroidApp) return Platform.isTablet ? "Android tablet" : "Android";
+	if (Platform.isMacOS) return "Mac";
+	if (Platform.isWin) return "Windows";
+	if (Platform.isLinux) return "Linux";
+	return "This device";
+}
 
 const OS_SYSTEM_FILES = new Set([
 	".DS_Store",
@@ -52,27 +79,20 @@ const OS_SYSTEM_FILES = new Set([
 
 export function isSystemFile(path: string): boolean {
 	const name = path.split("/").pop() ?? "";
-	return OS_SYSTEM_FILES.has(name);
+	return OS_SYSTEM_FILES.has(name) || name.startsWith("._");
 }
 
 export const BINARY_EXTENSIONS = new Set([
-	// Images
 	"png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif",
 	"heic", "heif", "avif",
-	// Audio / video
 	"mp3", "mp4", "wav", "ogg", "m4a", "flac", "aac", "avi", "mov", "mkv",
-	"webm",
-	// Documents / archives
+	"webm", "3gp", "opus",
 	"pdf", "zip", "tar", "gz", "bz2", "xz", "7z", "rar",
-	"docx", "xlsx", "pptx", "doc", "xls", "ppt",
-	// Fonts
+	"docx", "xlsx", "pptx", "doc", "xls", "ppt", "odt", "ods", "odp", "epub",
 	"ttf", "otf", "woff", "woff2", "eot",
-	// Executables / libraries / system
 	"exe", "dll", "dylib", "so", "dmg", "pkg", "deb", "rpm", "apk", "ipa",
-	"class", "jar",
-	// Cryptographic / key material
+	"class", "jar", "wasm",
 	"sig", "key", "p12", "pfx", "cer", "crt", "der", "p7b",
-	// Database / binary data
 	"db", "sqlite", "sqlite3", "bin", "dat", "raw",
 ]);
 
@@ -81,416 +101,39 @@ export function isBinary(path: string): boolean {
 	return BINARY_EXTENSIONS.has(ext);
 }
 
-export function isExcluded(
-	filePath: string,
-	excludedFolders: string[],
-): boolean {
-	if (excludedFolders.length === 0) return false;
-	return excludedFolders.some((folder) => {
-		const prefix = folder.replace(/\/$/, ""); // strip trailing slash
-		return filePath === prefix || filePath.startsWith(prefix + "/");
-	});
+function matchesPrefix(filePath: string, folder: string): boolean {
+	const prefix = folder.trim().replace(/^\/+|\/+$/g, "");
+	if (!prefix) return false;
+	return filePath === prefix || filePath.startsWith(prefix + "/");
+}
+
+export function isExcluded(filePath: string, excludedFolders: string[]): boolean {
+	return excludedFolders.some((folder) => matchesPrefix(filePath, folder));
 }
 
 export function isPlatformExcluded(
 	filePath: string,
+	configDir: string,
 	platformExcludedPaths: string[],
 ): boolean {
-	if (platformExcludedPaths.length === 0) return false;
-	return platformExcludedPaths.some((folder) => {
-		const prefix = folder.replace(/\/$/, ""); // strip trailing slash
-		return filePath === prefix || filePath.startsWith(prefix + "/");
+	return platformExcludedPaths.some((p) => {
+		const full = p.startsWith(configDir + "/") ? p : `${configDir}/${p}`;
+		return matchesPrefix(filePath, full) || matchesPrefix(filePath, p);
 	});
 }
 
-const SETUP_SQL = `-- vault_files table
-CREATE TABLE IF NOT EXISTS vault_files (
-  id           text primary key,
-  vault_id     text not null,
-  path         text not null,
-  content      text,
-  storage_path text,
-  is_binary    boolean default false,
-  mtime        bigint not null,
-  ctime        bigint not null,
-  size         bigint not null,
-  deleted      boolean default false,
-  updated_at   timestamptz default now(),
-  user_id      uuid references auth.users(id),
-  platform     text default 'all'
-);
-CREATE INDEX IF NOT EXISTS vault_files_vault_path
-  ON vault_files(vault_id, path);
-CREATE INDEX IF NOT EXISTS vault_files_vault_mtime
-  ON vault_files(vault_id, mtime);
-ALTER TABLE vault_files ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage own vault" ON vault_files FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
-ALTER PUBLICATION supabase_realtime ADD TABLE vault_files;
-
--- storage bucket: create manually in Storage → New bucket
---   Name: vault-attachments   Public: OFF
--- Then add a policy on storage.objects:
---   USING  (auth.uid()::text = (storage.foldername(name))[1])
---   WITH CHECK (same)`;
-
-export interface SettingsTabHost {
-	settings: SupaBaseJumpSettings;
-	saveSettings(): Promise<void>;
-	initSupabase(): Promise<void>;
-	signOut(): Promise<void>;
-	fullSync(): Promise<void>;
-	fetchNow(): Promise<void>;
-	initializeSchema(onProgress: (step: number) => void): Promise<void>;
+export function parseList(value: string): string[] {
+	return value
+		.split(/[,\n]/)
+		.map((s) => s.trim())
+		.filter(Boolean);
 }
 
-export class SupaBaseJumpSettingTab extends PluginSettingTab {
-	private plugin: Plugin & SettingsTabHost;
-
-	constructor(app: App, plugin: Plugin & SettingsTabHost) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-
-		new Setting(containerEl).setName("Initial setup").setHeading();
-
-		new Setting(containerEl)
-			.setName("Personal access token")
-			.setDesc(
-				"Generate at supabase.com/dashboard/account/tokens. Only needed for the setup step - can be cleared after.",
-			)
-			.addText((text) => {
-				text.setPlaceholder("Sbp_...")
-					.setValue(this.plugin.settings.personalAccessToken)
-					.onChange(async (value) => {
-						this.plugin.settings.personalAccessToken = value.trim();
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = "password";
-			});
-
-		new Setting(containerEl)
-			.setName("One-click project setup")
-			.setDesc(
-				"Creates the table, enables realtime, and creates the sattachments storage bucket. Run once after creating your supabase project.",
-			)
-			.addButton((btn) => {
-				btn.setButtonText("Run full setup").setCta();
-				btn.onClick(async () => {
-					btn.setButtonText("Setting up… (step 1/3)").setDisabled(
-						true,
-					);
-					try {
-						await this.plugin.initializeSchema((step) => {
-							btn.setButtonText(`Setting up… (step ${step}/3)`);
-						});
-					} finally {
-						btn.setButtonText("Run full setup").setDisabled(false);
-					}
-				});
-			});
-
-		const guide = containerEl.createEl("details", {
-			cls: "sbj-setup-guide",
-		});
-		guide.createEl("summary", { text: "Manual setup guide (fallback)" });
-
-		const steps = guide.createEl("ol");
-		[
-			"Create a free project at supabase.com.",
-			"Copy the Project URL and anon/public API key from Project Settings → API.",
-			"Generate a Personal Access Token at supabase.com/dashboard/account/tokens.",
-			"Enter the URL, keys, and token above, then click Run full setup.",
-			"Alternatively, run the SQL below in the supabase SQL editor and create the storage bucket manually.",
-		].forEach((s) => steps.createEl("li", { text: s }));
-
-		guide.createEl("pre", { text: SETUP_SQL, cls: "sbj-sql-block" });
-
-		new Setting(containerEl).setName("Supabase credentials").setHeading();
-
-		new Setting(containerEl)
-			.setName("Project URL")
-			.setDesc("Your supabase project URL (https://<project-ref>.supabase.co)")
-			.addText((text) =>
-				text
-					.setPlaceholder("https://xxxx.supabase.co")
-					.setValue(this.plugin.settings.supabaseUrl)
-					.onChange(async (value) => {
-						this.plugin.settings.supabaseUrl = value.trim();
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Anon/public key")
-			.setDesc("Found under project settings → API")
-			.addText((text) => {
-				text.setPlaceholder("••••••••")
-					.setValue(this.plugin.settings.supabaseAnonKey)
-					.onChange(async (value) => {
-						this.plugin.settings.supabaseAnonKey = value.trim();
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = "password";
-			});
-
-		new Setting(containerEl).setName("Account").setHeading();
-
-		new Setting(containerEl)
-			.setName("Email")
-			.setDesc("Supabase auth email address")
-			.addText((text) =>
-				text
-					.setPlaceholder("You@example.com")
-					.setValue(this.plugin.settings.email)
-					.onChange(async (value) => {
-						this.plugin.settings.email = value.trim();
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl).setName("Password").addText((text) => {
-			text.setPlaceholder("••••••••")
-				.setValue(this.plugin.settings.password)
-				.onChange(async (value) => {
-					this.plugin.settings.password = value;
-					await this.plugin.saveSettings();
-				});
-			text.inputEl.type = "password";
-		});
-
-		new Setting(containerEl)
-			.setName("Connect")
-			.setDesc(
-				"Sign in (or create an account) using the credentials above",
-			)
-			.addButton((btn) =>
-				btn
-					.setButtonText("Connect")
-					.setCta()
-					.onClick(async () => {
-						btn.setButtonText("Connecting…").setDisabled(true);
-						try {
-							await this.plugin.initSupabase();
-						} finally {
-							btn.setButtonText("Connect").setDisabled(false);
-						}
-					}),
-			)
-			.addButton((btn) =>
-				btn.setButtonText("Sign out").onClick(async () => {
-					await this.plugin.signOut();
-				}),
-			);
-
-		new Setting(containerEl).setName("Vault").setHeading();
-
-		let vaultIdText: TextComponent;
-		new Setting(containerEl)
-			.setName("Vault ID")
-			.setDesc(
-				"Unique identifier for this vault, files are namespaced under this ID in supabase storage, each vault syncing to the same supabase project needs a different ID",
-			)
-			.addText((text) => {
-				vaultIdText = text;
-				text.setPlaceholder("My-vault")
-					.setValue(this.plugin.settings.vaultId)
-					.onChange(async (value) => {
-						this.plugin.settings.vaultId = value.trim();
-						await this.plugin.saveSettings();
-					});
-			})
-			.addButton((btn) =>
-				btn
-					.setButtonText("Generate")
-					.setTooltip("Auto-generate a unique vault ID")
-					.onClick(async () => {
-						const id = window.crypto
-							.randomUUID()
-							.replace(/-/g, "")
-							.slice(0, 12);
-						vaultIdText.setValue(id);
-						this.plugin.settings.vaultId = id;
-						await this.plugin.saveSettings();
-						new Notice("Supabase jump: vault ID generated");
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Excluded folders")
-			.setDesc(
-				"Comma-separated list of folder paths to exclude from sync (e.g. templates, archive/old)",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("Templates, archive/old")
-					.setValue(this.plugin.settings.excludedFolders.join(", "))
-					.onChange(async (value) => {
-						this.plugin.settings.excludedFolders = value
-							.split(",")
-							.map((s) => s.trim())
-							.filter(Boolean);
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Platform-specific config paths")
-			.setDesc(
-				"Config paths that sync only to the current platform (mobile or desktop). Toggle common paths below, or add custom ones.",
-			).setHeading();
-
-		const WELL_KNOWN_PATHS = [
-			{ path: "appearance.json", label: "Appearance (themes, fonts, colors)" },
-			{ path: "themes/", label: "Themes folder" },
-			{ path: "snippets/", label: "CSS Snippets folder" },
-			{ path: "plugins/", label: "All plugins folder" },
-			{ path: "community-plugins.json", label: "Installed plugins list" },
-			{ path: "hotkeys.json", label: "Custom hotkeys" },
-			{ path: "workspace.json", label: "Workspace layout" },
-		];
-
-		for (const item of WELL_KNOWN_PATHS) {
-			const isActive = this.plugin.settings.platformExcludedPaths.includes(item.path);
-			new Setting(containerEl)
-				.setName(item.label)
-				.setDesc(item.path)
-				.addToggle((toggle) =>
-					toggle.setValue(isActive).onChange(async (value) => {
-						const paths = this.plugin.settings.platformExcludedPaths;
-						if (value && !paths.includes(item.path)) {
-							paths.push(item.path);
-						} else if (!value) {
-							const idx = paths.indexOf(item.path);
-							if (idx >= 0) paths.splice(idx, 1);
-						}
-						await this.plugin.saveSettings();
-					}),
-				);
-		}
-
-		const customPaths = this.plugin.settings.platformExcludedPaths.filter(
-			(p) => !WELL_KNOWN_PATHS.some((w) => w.path === p),
-		);
-		new Setting(containerEl)
-			.setName("Custom paths")
-			.setDesc(
-				"Comma-separated additional paths not listed above",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("my-plugin/, custom.json")
-					.setValue(customPaths.join(", "))
-					.onChange(async (value) => {
-						const knownActive = this.plugin.settings.platformExcludedPaths.filter(
-							(p) => WELL_KNOWN_PATHS.some((w) => w.path === p),
-						);
-						const custom = value
-							.split(",")
-							.map((s) => s.trim())
-							.filter(Boolean);
-						this.plugin.settings.platformExcludedPaths = [
-							...knownActive,
-							...custom,
-						];
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl).setName("Sync behaviour").setHeading();
-
-		new Setting(containerEl)
-			.setName("Sync on startup")
-			.setDesc("Run a full sync automatically when the app opens")
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.syncOnStartup)
-					.onChange(async (value) => {
-						this.plugin.settings.syncOnStartup = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Sync config folder")
-			.setDesc(
-				"Watch and sync the config folder (themes, snippets, plugin settings, etc.). Disable if you only want to sync vault notes.",
-			)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.syncConfigFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.syncConfigFolder = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Sync interval (minutes)")
-			.setDesc(
-				"How often to sync in the background. Set to 0 to disable.",
-			)
-			.addSlider((slider) =>
-				slider
-					.setLimits(0, 60, 1)
-					.setValue(this.plugin.settings.syncIntervalMinutes)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.syncIntervalMinutes = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl).setName("Actions").setHeading();
-
-		new Setting(containerEl)
-			.setName("Force sync")
-			.setDesc(
-				"Immediately compare and reconcile all local and remote files",
-			)
-			.addButton((btn) =>
-				btn
-					.setButtonText("Sync now")
-					.setCta()
-					.onClick(async () => {
-						btn.setButtonText("Syncing…").setDisabled(true);
-						try {
-							await this.plugin.fullSync();
-						} finally {
-							btn.setButtonText("Sync now").setDisabled(false);
-						}
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Fetch from database")
-			.setDesc(
-				"Download all remote changes without pushing local files",
-			)
-			.addButton((btn) =>
-				btn.setButtonText("Fetch now").onClick(async () => {
-					btn.setButtonText("Fetching…").setDisabled(true);
-					try {
-						await this.plugin.fetchNow();
-					} finally {
-						btn.setButtonText("Fetch now").setDisabled(false);
-					}
-				}),
-			);
-
-		if (this.plugin.settings.lastSyncTime > 0) {
-			const ts = new Date(
-				this.plugin.settings.lastSyncTime,
-			).toLocaleString();
-			containerEl.createEl("p", {
-				text: `Last synced: ${ts}`,
-				cls: "sbj-last-sync",
-			});
-		}
-	}
-}
+export const WELL_KNOWN_PLATFORM_PATHS = [
+	{ path: "appearance.json", label: "Appearance", desc: "Theme, fonts and colors" },
+	{ path: "themes/", label: "Themes folder", desc: "Installed themes" },
+	{ path: "snippets/", label: "CSS snippets", desc: "Your snippets folder" },
+	{ path: "plugins/", label: "Plugins folder", desc: "Plugin code and plugin settings" },
+	{ path: "community-plugins.json", label: "Enabled plugins list", desc: "Which community plugins are turned on" },
+	{ path: "hotkeys.json", label: "Hotkeys", desc: "Custom keyboard shortcuts" },
+];

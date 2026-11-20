@@ -1,74 +1,177 @@
-/* ── SupaBase Jump - settings page styles ───────────────────────────────── */
-
-/* Setup guide collapsible */
-.sbj-setup-guide {
-	margin-bottom: 1.2em;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
-	padding: 0;
-	overflow: hidden;
-}
-
-.sbj-setup-guide summary {
-	padding: 0.6em 0.9em;
-	font-weight: 600;
+.sbj-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	cursor: pointer;
+}
+
+.sbj-status-icon {
+	display: inline-flex;
+}
+
+.sbj-status-icon svg {
+	width: 13px;
+	height: 13px;
+}
+
+.sbj-status.is-syncing .sbj-status-icon svg {
+	animation: sbj-spin 1.2s linear infinite;
+}
+
+.sbj-status.is-error {
+	color: var(--text-error);
+}
+
+@keyframes sbj-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sbj-status.is-syncing .sbj-status-icon svg {
+		animation: none;
+	}
+}
+
+.sbj-remote-selection {
+	background-color: color-mix(in srgb, var(--sbj-peer-color) 22%, transparent);
+}
+
+.sbj-remote-caret {
+	position: relative;
+	display: inline;
+	border-left: 2px solid var(--sbj-peer-color);
+	margin-left: -1px;
+	margin-right: -1px;
+	pointer-events: none;
+}
+
+.sbj-remote-caret-label {
+	position: absolute;
+	left: -2px;
+	bottom: 100%;
+	padding: 0 4px;
+	border-radius: 3px 3px 3px 0;
+	background: var(--sbj-peer-color);
+	color: #fff;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1.5;
+	white-space: nowrap;
 	user-select: none;
-	background: var(--background-secondary);
-	list-style: none; /* remove default triangle in some browsers */
+	opacity: 0.9;
 }
 
-.sbj-setup-guide summary::-webkit-details-marker {
-	display: none;
+.sbj-presence {
+	position: absolute;
+	top: 6px;
+	right: 14px;
+	z-index: 10;
+	display: flex;
+	gap: 4px;
+	pointer-events: auto;
 }
 
-.sbj-setup-guide summary::before {
-	content: "▶ ";
-	font-size: 0.7em;
-	vertical-align: middle;
-	opacity: 0.6;
+.sbj-presence-avatar {
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: var(--sbj-peer-color);
+	color: #fff;
+	font-size: 11px;
+	font-weight: 600;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 0 0 2px var(--background-primary);
 }
 
-.sbj-setup-guide[open] summary::before {
-	content: "▼ ";
+.is-mobile .sbj-presence {
+	top: 4px;
+	right: 8px;
 }
 
-.sbj-setup-guide ol {
-	margin: 0.8em 1em 0.4em 2.2em;
-	padding: 0;
-}
-
-.sbj-setup-guide li {
-	margin-bottom: 0.3em;
-	font-size: 0.9em;
+.sbj-muted {
 	color: var(--text-muted);
 }
 
-/* SQL code block */
-.sbj-sql-block {
-	margin: 0.6em 0.8em 0.8em;
-	padding: 0.75em 1em;
-	background: var(--code-background);
-	border-radius: 4px;
-	font-family: var(--font-monospace);
-	font-size: 0.78em;
-	line-height: 1.6;
-	white-space: pre;
-	overflow-x: auto;
-	color: var(--code-normal);
-	border: 1px solid var(--background-modifier-border);
+.sbj-history-modal {
+	width: min(900px, 95vw);
 }
 
-/* Last-synced status line */
-.sbj-last-sync {
-	margin-top: 1.5em;
-	font-size: 0.85em;
-	color: var(--text-faint);
-	text-align: right;
+.sbj-history {
+	display: flex;
+	gap: var(--size-4-4);
+	min-height: 320px;
+	max-height: 70vh;
 }
 
-/* Widen the text inputs in the credentials section slightly */
-.vertical-tab-content .setting-item-control input[type="text"],
-.vertical-tab-content .setting-item-control input[type="password"] {
-	min-width: 260px;
+.sbj-history-list {
+	flex: 0 0 240px;
+	overflow-y: auto;
+	border-right: 1px solid var(--background-modifier-border);
+	padding-right: var(--size-4-2);
+}
+
+.sbj-history-item {
+	padding: var(--size-4-2);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+}
+
+.sbj-history-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+.sbj-history-item.is-selected {
+	background: var(--background-modifier-active-hover);
+}
+
+.sbj-history-when {
+	font-weight: 600;
+}
+
+.sbj-history-meta {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.sbj-history-detail {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.sbj-history-preview {
+	flex: 1;
+	overflow: auto;
+	margin: 0;
+	padding: var(--size-4-3);
+	background: var(--background-secondary);
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-small);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.sbj-history-actions {
+	display: flex;
+	gap: var(--size-4-2);
+	justify-content: flex-end;
+	padding-top: var(--size-4-2);
+}
+
+.is-mobile .sbj-history {
+	flex-direction: column;
+	max-height: none;
+}
+
+.is-mobile .sbj-history-list {
+	flex: none;
+	max-height: 35vh;
+	border-right: none;
+	border-bottom: 1px solid var(--background-modifier-border);
+	padding-right: 0;
 }

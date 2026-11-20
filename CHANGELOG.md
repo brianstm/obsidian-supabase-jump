@@ -5,6 +5,53 @@ All notable changes to SupaBase Jump will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-20
+
+Run **Database setup → Run setup** again after updating (or paste the new SQL by hand). Everything keeps working without it, but version history, private live channels and smarter conflict handling need it.
+
+### Added
+
+- Colored cursors and selections for your other devices while live editing, plus small badges showing who has the note open
+- Version history for every note, with preview and one click restore
+- Restore notes that were deleted on any device
+- Conflict copies when a note changed on two devices before they could sync, so nothing gets overwritten
+- A clickable status bar with quick actions, and a ribbon button for mobile
+- Device names, shown in live editing, history and conflict copies
+- A file size limit so huge files don't eat your storage
+- Option to sync or skip open tabs and layout (skipped by default)
+- Version history entry in the file menu and new commands for history, restoring, reconnecting and copying the setup SQL
+- Settings now use Obsidian's new settings layout, so every option shows up in settings search
+- A self-hosting guide covering Linux, macOS, Windows, Raspberry Pi and NAS, with HTTPS options for mobile
+
+### Changed
+
+- Live editing was rebuilt on top of the editor itself. Edits are applied exactly as typed, which keeps cursors steady and works with split panes
+- Typing is batched into small packets so live editing stays smooth and stays under Realtime limits
+- Big notes are split into chunks so they can be shared live too
+- Each device now keeps a small sync index. Files are only uploaded when their content really changed, which stops two devices from bouncing the same file back and forth
+- Changes that come in while the app was closed are fetched incrementally instead of downloading the whole vault every time
+- Renaming an attachment now moves it in storage instead of uploading it again
+- One-click setup now does everything in a single step, including the storage bucket
+- Password and access token moved to Obsidian's secret storage. Existing values are moved over for you
+- Sign in no longer stores a session in local storage
+- The plugin no longer syncs its own settings file between devices
+- Minimum Obsidian version is now 1.13.2
+- License is now plain MIT
+
+### Fixed
+
+- Opening the same note on two devices at the same time could double its text
+- Full sync stopped after the first 1000 files
+- Deletes and renames made while offline were never sent
+- Failed uploads were dropped instead of retried, so offline edits could be lost
+- Folder deletes and renames only touched the folder, not the files inside
+- After waking an iPhone, live editing could stay disconnected until the note was reopened
+- Platform specific settings never matched their files, so they synced everywhere anyway
+- Every upload asked the auth server who you were, which slowed down big syncs
+- Typing a wrong password could create a confusing new account prompt instead of saying the password was wrong
+- The manual setup SQL in settings was out of date
+- Background polling now pauses while the app is hidden to save battery
+
 ## [1.1.7] - 2026-07-31
 
 ### Fixed

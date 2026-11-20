@@ -76,7 +76,6 @@ function parseScalar(value: string): unknown {
 	if (value === "false" || value === "no") return false;
 	if (value === "null" || value === "~" || value === "") return null;
 
-	// Flow sequence: [a, b, c]
 	if (value.startsWith("[") && value.endsWith("]")) {
 		return value
 			.slice(1, -1)
@@ -85,7 +84,6 @@ function parseScalar(value: string): unknown {
 			.filter((s) => s !== null && s !== "");
 	}
 
-	// Quoted string
 	if (
 		(value.startsWith('"') && value.endsWith('"')) ||
 		(value.startsWith("'") && value.endsWith("'"))
@@ -93,7 +91,6 @@ function parseScalar(value: string): unknown {
 		return value.slice(1, -1);
 	}
 
-	// Integer or float
 	if (/^-?\d+$/.test(value)) return parseInt(value, 10);
 	if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
 

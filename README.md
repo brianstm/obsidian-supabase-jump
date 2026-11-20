@@ -1,14 +1,14 @@
 # <div align="center">SupaBase Jump for Obsidian</div>
 
 <div align="center">
-Sync your Obsidian vault with Supabase in real time. Edit the same note on two devices simultaneously, keep platform-specific settings separate, and access your notes from anywhere.
+Sync your Obsidian vault with your own Supabase project. Edit the same note on two devices at once and watch the changes show up as you type, a bit like Google Docs.
 </div>
 
 <br />
 
 <div align="center">
 
-**Note:** This is an unofficial way to sync and back up your notes. [Obsidian Sync](https://obsidian.md/sync) is the official supported option.
+**Note:** this is an unofficial way to sync and back up your notes. [Obsidian Sync](https://obsidian.md/sync) is the official option.
 
 </div>
 
@@ -22,282 +22,208 @@ Sync your Obsidian vault with Supabase in real time. Edit the same note on two d
 
 ![Demo Video](assets/video-demo.gif)
 
-> If the video is blurry, you can [download it here](assets/video-demo.mp4).
+> If the video looks blurry, you can [download it here](assets/video-demo.mp4).
 
-## Features
+## What it does
 
-- **Real-time collaborative editing** - Two devices sharing the same account can edit the same note at the same time. Yjs CRDTs handle merging automatically; updates broadcast instantly as you type with no duplication.
-- **Real-time sync** - Changes propagate across all your devices via Supabase Realtime
-- **Conflict resolution** - Newer files always win (based on modification time)
-- **Binary file support** - Images, PDFs, and other attachments sync via Supabase Storage
-- **Frontmatter parsing** - Properties and tags from markdown frontmatter are stored in dedicated columns for SQL querying
-- **Selective sync** - Exclude specific folders from syncing
-- **Settings sync** - The `.obsidian/` folder syncs automatically to share themes, snippets, and plugin settings across devices
-- **Platform-specific config** - Choose which config files sync only to mobile or only to desktop (e.g. keep separate themes or plugin lists per platform)
-- **Self-hosted support** - Works with any Supabase-compatible instance, not just supabase.com
-- **Mobile compatible** - Works on both desktop and mobile Obsidian
-- **One-click setup** - Automated database and storage configuration
-- **Offline-first** - Local changes are queued and synced when you reconnect
+- **Live editing.** Open the same note on your laptop and your phone and type on either one. Changes appear on the other device right away, with colored cursors and a small badge showing who else is in the note.
+- **Real time sync.** Every change you save is sent to Supabase and pushed to your other devices within a second or two.
+- **Works on phones.** When your phone goes to sleep or you switch apps, the plugin reconnects and catches up as soon as you come back.
+- **Works offline.** Edits made without a connection are kept and uploaded when you are back online. Deletes and renames made while offline are handled too.
+- **Never loses a version.** If a note was changed on two devices before they could sync, both versions are kept and the other one is saved next to it as a conflict copy.
+- **Version history.** Every note keeps up to 50 older versions in your database. Open the history, preview an old version, and restore it with one click.
+- **Restore deleted notes.** Bring back notes you deleted on any device.
+- **Attachments.** Images, PDFs and other files go to Supabase Storage. Renaming a big file just moves it instead of uploading it again.
+- **Settings sync.** Your themes, snippets, hotkeys and plugins can follow you to every device, and you can choose which ones stay different on mobile and desktop.
+- **Queryable notes.** Frontmatter and tags are stored in their own columns so you can query your notes with SQL.
+- **Your data, your project.** Everything lives in your own Supabase project, protected by row level security.
+- **Self-host friendly.** Run Supabase on your own server, Mac, Windows PC, Raspberry Pi or NAS. See the [self-hosting guide](SELF_HOSTING.md).
 
-## Quick Start
+## Getting started
 
-### 1. Create a Supabase Project
+### 1. Create a Supabase project
 
-1. Go to [supabase.com](https://supabase.com) and create a free account
-2. Create a new project
-3. Copy your **Project URL** and **anon/public key** from **Settings → API**
+You have two choices:
 
-### 2. Install the Plugin
+- **Hosted (easiest):** sign up at [supabase.com](https://supabase.com) and create a new project. The free plan is fine. Then open **Project settings → API** and keep the **Project URL** and the **anon public key** handy.
+- **Self-hosted:** run Supabase yourself with Docker. The [self-hosting guide](SELF_HOSTING.md) covers Linux, macOS, Windows, Raspberry Pi and NAS, plus how to reach it from your phone over HTTPS.
 
-The plugin is pending review in the community plugin store. Install it via **BRAT** (recommended) or manually in the meantime.
+### 2. Install the plugin
 
-#### Install via BRAT (Recommended)
+Install **SupaBase Jump** from **Settings → Community plugins → Browse** in Obsidian, then turn it on.
 
-[BRAT](https://github.com/TfTHacker/obsidian42-brat) lets you install and auto-update beta plugins directly from GitHub.
+You can also install it by hand: download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/brianstm/obsidian-supabase-jump/releases), put them in `<your vault>/.obsidian/plugins/supabase-jump/`, then reload Obsidian.
 
-1. Install the **BRAT** plugin from the Obsidian Community Plugins store
-2. Open **Settings → BRAT → Add Beta Plugin**
-3. Paste the repo URL: `https://github.com/brianstm/obsidian-supabase-jump`
-4. Click **Add Plugin** - BRAT will install it and keep it up to date automatically
+### 3. Set up your database
 
-#### Manual Installation
+1. Create a personal access token at [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens).
+2. In **Settings → SupaBase Jump → Database setup**, add the token and press **Run setup**.
 
-1. Download `main.js` and `manifest.json` from the [latest release](https://github.com/brianstm/obsidian-supabase-jump/releases)
-2. Create a folder: `<vault>/.obsidian/plugins/supabase-jump/`
-3. Copy the files into that folder
-4. Reload Obsidian and enable the plugin in **Settings → Community plugins**
+The setup is safe to run again. Do it once after every plugin update that mentions database changes, like this one.
 
-### 3. Configure the Plugin
+Self-hosting, or don't want to create a token? Press **Copy SQL** and run it in the SQL editor of your project instead. The [self-hosting guide](SELF_HOSTING.md#step-6-set-up-the-database) shows where.
 
-1. Open **Settings → SupaBase Jump**
-2. In the **Initial setup** section:
-    - Generate a **Personal Access Token** at [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens)
-    - Paste it into the **Personal access token** field
-    - Click **Run full setup** - this creates the database table, storage bucket, and enables Realtime
-3. Fill in your credentials:
-    - **Project URL** - Your Supabase project URL (e.g. `https://xxxxx.supabase.co`)
-    - **Anon/public key** - Your anon/public key
-    - **Email** - Your Supabase account email
-    - **Password** - Your Supabase account password
-4. Click **Connect**
+### 4. Connect
 
-That's it! Your vault will start syncing automatically.
+1. Fill in the project URL, anon key, email and password. The password is kept in Obsidian's secret storage on your device.
+2. Pick a **Vault ID**. Use the same one on every device that should share this vault.
+3. Press **Connect**.
 
-## Usage
+That's it. On your other devices, install the plugin, use the same details and the same vault ID, and press connect.
 
-### Automatic Sync
+## Using it
 
-Once connected, the plugin automatically:
+### The status bar
 
-- Pushes local changes to Supabase (debounced by 1 second)
-- Pulls remote changes from other devices in real time
-- Syncs on startup (if **Sync on startup** is enabled)
-- Syncs periodically based on your **Sync interval** setting
+The status bar at the bottom shows what is going on: synced, syncing, offline, or live with other devices. Click it for quick actions like sync now, version history and restoring deleted notes. On mobile, use the ribbon button instead.
 
-### Real-Time Collaborative Editing
+### Live editing
 
-When two devices open the same markdown note, they join an ephemeral Supabase Realtime channel for that file. Edits are merged using [Yjs](https://github.com/yjs/yjs) CRDTs. Changes appear on the other device instantly as you type, with no full-document replacement or text duplication. The Yjs state is kept only in memory; once you close the note the channel is released and normal `mtime`-based conflict resolution takes over.
+When a note is open on more than one device, the devices talk to each other directly through Supabase Realtime. Each keystroke is merged with [Yjs](https://github.com/yjs/yjs), so you can both type at the same time without overwriting each other. Turn off cursors or presence badges in settings if you find them distracting.
 
-### Platform-Specific Config Paths
+### Conflicts
 
-In **Settings → Platform-specific config paths**, toggle which Obsidian config files should sync only to the current platform (mobile or desktop):
+If a note was changed on two devices while they couldn't reach each other, you'll get a copy named like `My note (conflict iPhone 2026-11-20 1405).md`. Look through both, keep what you need, and delete the copy. If you'd rather keep only the newest version, change **When a note changed on two devices** in settings.
 
-| Toggle                 | Path                     | Example use                    |
-| ---------------------- | ------------------------ | ------------------------------ |
-| Appearance             | `appearance.json`        | Different theme on mobile      |
-| Themes folder          | `themes/`                | Mobile-only themes             |
-| CSS Snippets           | `snippets/`              | Mobile/desktop-only CSS        |
-| All plugins            | `plugins/`               | Desktop-only plugin data       |
-| Installed plugins list | `community-plugins.json` | Different plugins per platform |
-| Custom hotkeys         | `hotkeys.json`           | Different shortcuts on mobile  |
-| Workspace layout       | `workspace.json`         | Different pane layout          |
+### Version history
 
-Use the **Custom paths** field to add any other paths not listed above.
+Run **Show version history of this note** from the command palette, or right click a note and pick **Version history**. A snapshot is saved when you start editing a note after a 10 minute break, so you get a version for every editing session without flooding your database.
 
-When a file matches a platform-specific path, it is tagged in the database (`platform = 'mobile'` or `platform = 'desktop'`). Pull operations skip rows tagged for a different platform.
+### Commands
 
-### Manual Sync
+- **Sync now** compares everything and fixes anything that is out of date
+- **Check for changes** grabs the latest changes from the cloud
+- **Show version history of this note**
+- **Restore a deleted note**
+- **Show sync status**
+- **Reconnect**
+- **Copy database setup SQL**
 
-Use the **Actions** section in settings:
+### Keeping some settings separate per device type
 
-- **Sync now** - Full two-way sync (push + pull)
-- **Fetch now** - Pull remote changes without pushing local files
+Under **Obsidian settings folder → Keep separate for phone and computer**, pick things like your theme or hotkeys that should stay different on mobile and desktop. Your open tabs and layout are not synced by default, so switching devices won't move your tabs around.
 
-Or use the command palette:
+## Self-hosting
 
-- `SupaBase Jump: Force sync now`
-- `SupaBase Jump: Fetch from database`
-- `SupaBase Jump: Show sync status`
+Everything the plugin needs (Postgres, Auth, Storage and Realtime) is part of the standard self-hosted Supabase setup. The short version:
 
-### Exclude Folders
+1. Install Docker.
+2. Clone the Supabase repo, copy the `docker` folder, change the secrets in `.env`, and run `docker compose up -d`.
+3. Set `ENABLE_EMAIL_AUTOCONFIRM=true` so you can sign in without an email server.
+4. Give it an `https://` address with Tailscale, Cloudflare Tunnel or Caddy so your phone can reach it.
+5. Run the setup SQL in Studio and connect the plugin with your server address and `ANON_KEY`.
 
-To exclude folders from syncing, add them to **Excluded folders** (comma-separated) in settings.
+The [self-hosting guide](SELF_HOSTING.md) walks through each step for every platform, plus backups, updates and common problems.
 
-Example: `Templates, archive/old`
+## How it works
 
-By default no folders are excluded. If you want to prevent vault settings from syncing entirely, add `.obsidian` to your excluded list (or use the platform-specific config paths feature for finer control).
+- Text files are stored in the `vault_files` table, one row per file.
+- Attachments are stored in the private `vault-attachments` storage bucket.
+- Each device keeps a small index of what it last synced, so it can tell a real edit apart from a file that only had its timestamp touched. That is what makes deletes, renames and conflicts safe.
+- Changes from other devices arrive through Supabase Realtime. If that connection drops, the plugin checks for changes every 20 seconds until it is back.
+- Live editing uses private Realtime channels that only your account can join.
 
-### Self-Hosted Supabase
+### Database columns
 
-The plugin works with any Supabase-compatible URL. Enter your self-hosted instance URL in the **Project URL** field. Note that the one-click setup uses the Supabase cloud management API, so for self-hosted instances you will need to run the SQL manually using the guide in the settings panel.
+| Column                    | What it holds                                   |
+| ------------------------- | ----------------------------------------------- |
+| `id`                      | `{vaultId}::{path}` with slashes as `__SLASH__` |
+| `vault_id`                | The vault ID from settings                      |
+| `path`                    | Path of the file inside the vault               |
+| `content`                 | Text of the file (text files only)              |
+| `storage_path`            | Where the attachment lives in storage           |
+| `frontmatter`             | All frontmatter properties as JSON              |
+| `tags`                    | Tags from frontmatter                           |
+| `platform`                | `all`, `mobile` or `desktop`                    |
+| `mtime`, `ctime`, `size`  | File details                                    |
+| `deleted`                 | Set when the file is deleted                    |
+| `device_id`, `device_name`| Which device saved it last                      |
+| `updated_at`              | Set by the database on every change             |
+| `user_id`                 | Owner, used by row level security               |
 
-## How It Works
+Old versions live in `vault_file_versions`.
 
-### Architecture
-
-- **Text files** (`.md`, `.txt`, etc.) - Content stored directly in the `vault_files` PostgreSQL table
-- **Binary files** (images, PDFs, etc.) - Uploaded to Supabase Storage; metadata in `vault_files`
-- **Database sync** - Supabase Realtime broadcasts row changes to all connected clients for file-level sync
-- **Live editing sync** - A per-file Supabase Broadcast channel carries Yjs CRDT updates for same-note co-editing
-- **Conflict resolution** - Higher `mtime` (modification time) wins for file-level sync; Yjs handles in-session edits automatically
-
-### Database Schema
-
-The plugin creates a `vault_files` table with:
-
-| Column                   | Type      | Description                                       |
-| ------------------------ | --------- | ------------------------------------------------- |
-| `id`                     | text (PK) | `{vaultId}::{filePath}` (slashes → `__SLASH__`)   |
-| `vault_id`               | text      | Unique ID for your vault                          |
-| `path`                   | text      | File path relative to vault root                  |
-| `content`                | text      | File content (text files only)                    |
-| `storage_path`           | text      | Supabase Storage key (binary files only)          |
-| `frontmatter`            | jsonb     | All YAML frontmatter properties                   |
-| `tags`                   | text[]    | Tags extracted from the `tags:` frontmatter field |
-| `platform`               | text      | `'all'`, `'mobile'`, or `'desktop'`               |
-| `mtime`, `ctime`, `size` | bigint    | File metadata                                     |
-| `deleted`                | boolean   | Soft-delete flag                                  |
-| `user_id`                | uuid      | Used by RLS to scope rows to each user            |
-
-### Querying Frontmatter from Supabase
-
-Once notes are synced you can query them directly from the Supabase SQL editor or any Postgres client:
+### Querying your notes
 
 ```sql
--- All notes tagged "book"
-SELECT path, frontmatter->>'title', tags
-FROM vault_files
-WHERE 'book' = ANY(tags) AND deleted = false;
+-- Notes tagged "book"
+select path, frontmatter->>'title', tags
+from vault_files
+where 'book' = any(tags) and deleted = false;
 
--- Notes where status is not "done"
-SELECT path, frontmatter->>'status'
-FROM vault_files
-WHERE frontmatter->>'status' != 'done' AND deleted = false;
+-- Notes that aren't done yet
+select path, frontmatter->>'status'
+from vault_files
+where frontmatter->>'status' != 'done' and deleted = false;
 
--- Notes by a specific author, sorted by date
-SELECT path, frontmatter->>'date'
-FROM vault_files
-WHERE frontmatter->>'author' = 'Alice'
-ORDER BY frontmatter->>'date' DESC;
-
--- Count notes per tag
-SELECT tag, COUNT(*)
-FROM vault_files, unnest(tags) AS tag
-WHERE deleted = false
-GROUP BY tag ORDER BY count DESC;
-
--- Desktop-only config files
-SELECT path FROM vault_files
-WHERE platform = 'desktop' AND deleted = false;
+-- How many notes use each tag
+select tag, count(*)
+from vault_files, unnest(tags) as tag
+where deleted = false
+group by tag order by count desc;
 ```
-
-### Storage Bucket
-
-Binary files are stored in a private `vault-attachments` bucket with:
-
-- RLS policies ensuring users can only access their own files
-- Base64url-encoded keys to handle special characters in filenames
-- Original file extensions preserved for MIME type inference
 
 ## Troubleshooting
 
-### "Setup failed at step 1/2/3"
+**Setup failed.** Check that the personal access token is correct and belongs to the account that owns the project. For self-hosted projects, use **Copy SQL** instead.
 
-- **Step 1 (Database)** - Check your Personal Access Token is valid and has the required permissions
-- **Step 2 (Storage bucket)** - If auto-creation fails, manually create a bucket named `vault-attachments` (Private) in **Supabase → Storage**
-- **Step 3 (RLS policy)** - Ensure your Supabase project has the `storage` schema enabled
+**Self-hosted and something isn't working.** The [self-hosting guide](SELF_HOSTING.md#troubleshooting) has a troubleshooting section for connection, HTTPS, websocket and upload problems.
 
-### "Email not confirmed"
+**Email not confirmed.** Click the link Supabase emailed you and press connect again. You can also turn off email confirmation in Supabase under **Authentication → Providers → Email**.
 
-If you see this error after connecting:
+**A message says the database is missing new columns.** Run the setup again. Your notes are not touched, it only adds what is missing.
 
-1. Check your email inbox for a confirmation link from Supabase
-2. Click the link to confirm your account
-3. Click **Connect** again in the plugin settings
+**Files are not syncing.**
 
-Or disable email confirmation:
+1. Look at the status bar. It should say Synced.
+2. Make sure the vault ID is the same on both devices.
+3. Make sure the file isn't inside a skipped folder or bigger than the size limit.
+4. Run **Sync now** and check the developer console (Ctrl+Shift+I or Cmd+Option+I) for errors.
 
-1. Go to **Supabase → Authentication → Providers → Email**
-2. Uncheck **"Confirm email"**
+**Live editing isn't working.** Both devices need to be connected and have the same note open. If you set up your database before version 1.2.0, run the setup again so private live channels are allowed.
 
-### Files not syncing
+## Privacy and security
 
-1. Check the status bar (bottom-right) - it should show **🟢 Synced**
-2. Open the browser console (**Ctrl+Shift+I** / **Cmd+Option+I**) and look for errors
-3. Verify your **Vault ID** is set in settings
-4. Check that the file path is not in your **Excluded folders** list
-5. Try **Sync now** manually from settings
-
-### Real-time editing not working
-
-1. Ensure both devices are connected (🟢 Synced in the status bar)
-2. Make sure both devices have the same file open
-3. Check the browser console for channel subscription errors
-4. The CRDT channel only activates for `.md` files in a MarkdownView
-
-### "Invalid key" errors
-
-The plugin automatically handles special characters in filenames by base64url-encoding storage keys. If you still see this error:
-
-1. Ensure you are running the latest version of the plugin
-2. Check the browser console for the full error message
-3. Report the issue on [GitHub](https://github.com/brianstm/obsidian-supabase-jump/issues) with the filename
+- Your notes are stored in your own Supabase project, not on anyone else's server.
+- Row level security makes sure only your account can read or change your files.
+- Your password and access token are kept in Obsidian's secret storage, not in the plugin's data file.
+- Live editing messages go through private channels limited to your account and are never saved.
+- No tracking or analytics of any kind.
 
 ## Development
-
-### Building from Source
 
 ```bash
 git clone https://github.com/brianstm/obsidian-supabase-jump.git
 cd obsidian-supabase-jump
 npm install
 npm run dev
-npm run build
 ```
 
-### Project Structure
+Run `npm run lint` and `npm run build` before opening a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for more.
 
 ```
 src/
-├── main.ts            # Plugin entry point and lifecycle management
-├── settings.ts        # Settings interface and UI
-├── supabase.ts        # Supabase client and authentication
-├── sync.ts            # File sync logic and Realtime listeners
-├── realtime-crdt.ts   # Yjs CRDT manager for real-time co-editing
-└── frontmatter.ts     # YAML frontmatter parser
+├── main.ts           plugin setup, commands and events
+├── settings.ts       settings and path rules
+├── settings-tab.ts   settings screen
+├── supabase.ts       sign in and connection handling
+├── sync.ts           file sync engine
+├── sync-state.ts     per-device sync index
+├── schema.ts         database setup SQL
+├── history.ts        version history and restore screens
+├── status.ts         status bar
+├── frontmatter.ts    frontmatter parser
+└── live/             live editing (Yjs, cursors, presence)
 ```
-
-## Privacy & Security
-
-- Your vault data is stored in **your own Supabase project** - not on third-party servers
-- All database access uses **Row Level Security (RLS)** - you can only read and write your own files
-- The CRDT broadcast channel is **ephemeral** - no Yjs state is persisted to the database
-- Passwords are hashed by Supabase Auth - the plugin never stores plaintext passwords
-- No telemetry or analytics - the plugin is fully open source
 
 ## License
 
-MIT - see [LICENSE](LICENSE)
+MIT, see [LICENSE](LICENSE).
 
 ## Support
 
-- **Issues & Feature Requests** - [GitHub Issues](https://github.com/brianstm/obsidian-supabase-jump/issues)
+Found a bug or have an idea? Open an issue on [GitHub](https://github.com/brianstm/obsidian-supabase-jump/issues).
 
-## Acknowledgments
+## Thanks
 
-Built with:
-
-- [Obsidian Plugin API](https://docs.obsidian.md)
-- [Supabase](https://supabase.com)
-- [Supabase JS Client](https://github.com/supabase/supabase-js)
-- [Yjs](https://github.com/yjs/yjs) - CRDT library for real-time collaborative editing
+Built with the [Obsidian API](https://docs.obsidian.md), [Supabase](https://supabase.com) and [Yjs](https://github.com/yjs/yjs).
