@@ -20,7 +20,15 @@ Sync your Obsidian vault with your own Supabase project. Edit the same note on t
 
 ## Demo
 
-![Demo Video](assets/video-demo.gif)
+**One note, three devices.** A Mac, an iPad and a phone editing together, each with its own cursor.
+
+![Live editing across a Mac, iPad and phone](assets/video-demo-devices.gif)
+
+> If the video looks blurry, you can [download it here](assets/video-demo-devices.mp4).
+
+**Side by side.** Two windows of the same vault syncing as you type.
+
+![Two windows syncing as you type](assets/video-demo.gif)
 
 > If the video looks blurry, you can [download it here](assets/video-demo.mp4).
 
@@ -105,7 +113,7 @@ Under **Obsidian settings folder → Keep separate for phone and computer**, pic
 
 ## Self-hosting
 
-Everything the plugin needs (Postgres, Auth, Storage and Realtime) is part of the standard self-hosted Supabase setup. The short version:
+Everything the plugin needs (Postgres, Auth, Storage and Realtime) is part of the standard self-hosted Supabase setup. On a small server or Raspberry Pi, the [lite setup](SELF_HOSTING.md#lite-setup-for-small-servers-optional) skips the parts the plugin doesn't use and idles at around 800 MB of RAM. The short version:
 
 1. Install Docker.
 2. Clone the Supabase repo, copy the `docker` folder, change the secrets in `.env`, and run `docker compose up -d`.

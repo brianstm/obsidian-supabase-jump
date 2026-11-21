@@ -10,6 +10,7 @@ If you just want things to work with the least effort, the free plan on [supabas
 - [Step 1: Install Docker](#step-1-install-docker)
 - [Step 2: Get Supabase running](#step-2-get-supabase-running)
 - [Step 3: Change the default secrets](#step-3-change-the-default-secrets)
+- [Lite setup for small servers (optional)](#lite-setup-for-small-servers-optional)
 - [Step 4: Settings that matter for this plugin](#step-4-settings-that-matter-for-this-plugin)
 - [Step 5: Make it reachable from your phone](#step-5-make-it-reachable-from-your-phone)
 - [Step 6: Set up the database](#step-6-set-up-the-database)
@@ -22,7 +23,7 @@ If you just want things to work with the least effort, the free plan on [supabas
 ## What you need
 
 - A computer that stays on while you want to sync. A small home server, a NAS, a Raspberry Pi 4 or 5, or a cheap cloud VPS all work.
-- At least 4 GB of RAM (2 GB can work but is tight) and about 10 GB of free disk space plus room for your vault.
+- At least 4 GB of RAM for the full Supabase stack (2 GB can work but is tight), or about 1 GB of free RAM for the [lite setup](#lite-setup-for-small-servers-optional). Plus about 10 GB of free disk space and room for your vault.
 - Docker with Docker Compose.
 - About 30 minutes.
 
@@ -144,7 +145,15 @@ A quick way to make random values:
 openssl rand -base64 48
 ```
 
-The `ANON_KEY` and `SERVICE_ROLE_KEY` are signed with your `JWT_SECRET`, so they have to be made from it. The official guide has a key generator for this in its "Securing your services" section. Paste your `JWT_SECRET` there and copy the two keys it gives you into `.env`.
+The `ANON_KEY` and `SERVICE_ROLE_KEY` are signed with your `JWT_SECRET`, so they have to be made from it. The easiest way is the script that ships with Supabase. It makes every secret and key at once and writes them into `.env`:
+
+```bash
+sh utils/generate-keys.sh --update-env
+```
+
+You still need to set `DASHBOARD_USERNAME` yourself. If your copy of Supabase doesn't have `utils/generate-keys.sh`, use the key generator in the "Securing your services" section of the official guide instead.
+
+If you want the lighter version, set it up now (see [Lite setup for small servers](#lite-setup-for-small-servers-optional)) before you start anything.
 
 Then start everything:
 
@@ -159,6 +168,69 @@ docker compose ps
 ```
 
 Open `http://localhost:8000` (or `http://<server-ip>:8000`) in a browser. You should see a login prompt for Studio. Use the dashboard username and password you set.
+
+With the lite setup, Studio is off and the API only answers on the server itself. Check it there instead. This should print a short piece of JSON:
+
+```bash
+curl -s http://127.0.0.1:8000/auth/v1/.well-known/jwks.json
+```
+
+## Lite setup for small servers (optional)
+
+The standard Supabase setup starts about a dozen containers, and several of them are things this plugin never uses: image resizing, edge functions, the connection pooler and, most of the time, the Studio dashboard. On a home server, a Raspberry Pi or a small VPS you can skip them and cap the memory of the rest. My current setup idled at about **800 MB** with this.
+
+| Part              | Lite setup                | Why                                              |
+| ----------------- | ------------------------- | ------------------------------------------------ |
+| Postgres          | Always on (1 GB cap)      | Your notes and version history                   |
+| Auth              | Always on                 | Signing in                                       |
+| PostgREST         | Always on                 | Reading and writing notes                        |
+| Realtime          | Always on                 | Instant sync, live editing and cursors           |
+| Storage           | Always on                 | Attachments                                      |
+| API gateway       | Always on                 | The one address the plugin talks to              |
+| Studio + meta     | Only when you need them   | The dashboard, used for the setup SQL            |
+| imgproxy          | Off                       | The plugin doesn't resize images                 |
+| Edge Functions    | Off                       | Not used                                         |
+| Supavisor pooler  | Off                       | Not needed for one user, and it publishes Postgres |
+
+You need Docker Compose 2.24 or newer. Check with `docker compose version`.
+
+1. In your `supabase-project` folder, download the lite file from this repo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/brianstm/obsidian-supabase-jump/main/self-hosting/docker-compose.lite.yml -o docker-compose.lite.yml
+```
+
+2. Tell Docker Compose to use it on top of the official file. Open `.env` and change the `COMPOSE_FILE` line (add it if it isn't there):
+
+```env
+COMPOSE_FILE=docker-compose.yml:docker-compose.lite.yml
+```
+
+3. Check that it lines up with your version of Supabase. You should see exactly these six services:
+
+```bash
+docker compose config --services
+```
+
+`api-gw`, `auth`, `db`, `realtime`, `rest` and `storage`. If you get an error instead, your Supabase version names a service differently, so compare the names with the lite file.
+
+4. Start it as usual with `docker compose up -d`.
+
+A few things work differently in the lite setup:
+
+- **The API only listens on the server itself** (`127.0.0.1`). Docker skips most firewalls like ufw when it publishes a port, so this keeps your database API off your home network. Reach it through Tailscale, Cloudflare Tunnel or Caddy (step 5), even from a desktop on the same network.
+- **Studio is off.** Start it when you need the dashboard and stop it afterwards to free about 400 MB (commands below). You can also skip Studio completely and run the setup SQL from the command line (see step 6).
+- **Each part has a memory cap.** If a container keeps restarting, raise its `mem_limit` in `docker-compose.lite.yml` and run `docker compose up -d` again. `docker stats --no-stream` shows how close each one is to its cap.
+- **The attachment size limit** is set in `docker-compose.lite.yml` (`FILE_SIZE_LIMIT`, 100 MB by default).
+
+Starting and stopping Studio in the lite setup:
+
+```bash
+docker compose --profile studio up -d studio meta   # start
+docker compose --profile studio stop studio meta    # stop
+```
+
+While it's running, open your project URL in a browser and log in with the dashboard username and password.
 
 ## Step 4: Settings that matter for this plugin
 
@@ -181,7 +253,7 @@ SUPABASE_PUBLIC_URL=https://supabase.example.com
 SITE_URL=https://supabase.example.com
 ```
 
-**Attachment size limit.** The storage service has a file size limit, set with `FILE_SIZE_LIMIT` in `docker-compose.yml` (in bytes, 52428800 is 50 MB). Raise it if you keep big videos or PDFs in your vault, and match the **Largest file to sync** setting in the plugin.
+**Attachment size limit.** The storage service has a file size limit, set with `FILE_SIZE_LIMIT` in `docker-compose.yml` (in bytes, 52428800 is 50 MB), or in `docker-compose.lite.yml` if you use the lite setup. Raise it if you keep big videos or PDFs in your vault, and match the **Largest file to sync** setting in the plugin.
 
 After changing `.env` or `docker-compose.yml`, restart:
 
@@ -196,6 +268,8 @@ At this point Supabase works on `http://<server-ip>:8000`. That is fine for a de
 
 - iPhone and iPad block plain `http://` addresses in most cases, so you need `https://`.
 - If you want to sync away from home, your phone has to reach the server from outside your network.
+
+With the lite setup, the API only answers on the server itself, so every device, including a desktop on the same network, connects through one of the options below.
 
 Pick one of these. They all handle the websocket connection that live editing uses.
 
@@ -212,6 +286,12 @@ sudo tailscale serve --bg 8000
 ```
 
 It prints an address like `https://my-server.tail1234.ts.net`. That's your project URL. Your phone needs the Tailscale app running to sync.
+
+If something else on the server already uses Tailscale's port 443, pick another port. The project URL then includes it, for example `https://my-server.tail1234.ts.net:6443`:
+
+```bash
+sudo tailscale serve --bg --https=6443 http://127.0.0.1:8000
+```
 
 ### Option B: Cloudflare Tunnel (no open ports, works anywhere)
 
@@ -247,17 +327,35 @@ Caddy gets an HTTPS certificate for you automatically.
 
 Whichever option you pick, go back to step 4 and put the new `https://` address into `API_EXTERNAL_URL`, `SUPABASE_PUBLIC_URL` and `SITE_URL`, then restart.
 
-**Never expose the Postgres port (5432) to the internet.** The plugin only needs port 8000, through one of the options above.
+**Never expose the Postgres port (5432) to the internet.** The plugin only needs port 8000, through one of the options above. In the standard setup the pooler publishes 5432 and 6543 on every network interface, and Docker opens them even if your firewall says no. The lite setup doesn't publish them at all.
 
 ## Step 6: Set up the database
 
 The one-click setup in the plugin only works with supabase.com projects, so on a self-hosted server you run the SQL yourself. It only takes a minute.
+
+**Wait until Realtime is healthy first.** On a brand new install, Realtime creates its own tables a little while after it starts. If you run the SQL before that, the rules for private live editing channels are skipped without any error, and live editing and cursors won't work. Check with `docker compose ps`: `realtime` should say `healthy`. If you're not sure, run the SQL again later. It's always safe to run twice.
 
 1. In Obsidian, open **Settings → SupaBase Jump → Database setup** and press **Copy SQL**. You can also run **Copy database setup SQL** from the command palette.
 2. Open Studio in your browser and go to the **SQL Editor**.
 3. Paste the SQL and press **Run**.
 
 You should see "Success. No rows returned". The SQL is safe to run again, so do it after plugin updates that mention database changes.
+
+**No Studio, or using the lite setup?** Save the SQL to a file on the server (for example `nano setup.sql` and paste), then run it from the `supabase-project` folder:
+
+```bash
+docker compose exec -T db psql -h localhost -v ON_ERROR_STOP=1 -U postgres -d postgres < setup.sql
+```
+
+To check it worked, this should list two "live channels" rules and `vault_files`:
+
+```bash
+docker compose exec -T db psql -h localhost -U postgres -d postgres \
+  -c "select policyname from pg_policies where schemaname = 'realtime';" \
+  -c "select tablename from pg_publication_tables where pubname = 'supabase_realtime';"
+```
+
+If you ran the SQL again because live editing wasn't working, fully quit and reopen Obsidian on every device afterwards (see [Troubleshooting](#troubleshooting)).
 
 It creates the notes table, version history, the attachments bucket, and the security rules for files and live editing channels.
 
@@ -295,7 +393,13 @@ To run the database backup every night at 3 am, add a line with `crontab -e`:
 0 3 * * * cd ~/supabase-project && docker compose exec -T db pg_dump -U postgres postgres > ~/backups/supabase-$(date +\%F).sql
 ```
 
-Keep at least one copy somewhere other than the server itself.
+Keep at least one copy somewhere other than the server itself. Don't rely on copying `volumes/db/data` while Postgres is running. Those files can be caught halfway through a write, so back up the dump instead.
+
+To restore a dump into a running instance:
+
+```bash
+docker compose exec -T db psql -h localhost -U postgres -d postgres < backup-2026-11-20.sql
+```
 
 ## Updating Supabase
 
@@ -305,7 +409,9 @@ docker compose pull
 docker compose up -d
 ```
 
-Make a backup first. Every so often, compare your `docker-compose.yml` with the latest one in the Supabase repo, since new versions sometimes add settings.
+Make a backup first. Every so often, compare your `docker-compose.yml` with the latest one in the Supabase repo, since new versions sometimes add settings. If your copy of Supabase has an `update.sh` script, it can do this for you.
+
+If you use the lite setup, run `docker compose config --services` after every update. It should still list the same six services. If a release renames one, download the latest `docker-compose.lite.yml` from this repo.
 
 ## Quick local test with the Supabase CLI
 
@@ -327,6 +433,23 @@ It prints an **API URL** (usually `http://127.0.0.1:54321`), an **anon key**, an
 **"Email not confirmed".** Set `ENABLE_EMAIL_AUTOCONFIRM=true`, restart, and press connect again. If you already created the account, you can confirm it in Studio under **Authentication → Users**.
 
 **Files sync but live editing doesn't.** Your proxy may be blocking websockets. Tailscale, Cloudflare Tunnel and Caddy all pass them through by default. With nginx, add the `Upgrade` and `Connection` headers for websocket proxying. Also check `docker compose ps` to make sure the realtime container is healthy.
+
+To test the websocket on the server itself, run this from the `supabase-project` folder. It should print `HTTP/1.1 101 Switching Protocols`:
+
+```bash
+ANON=$(grep ^ANON_KEY= .env | cut -d= -f2)
+curl -s -i -m 5 --http1.1 -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: SGVsbG9Xb3JsZDEyMzQ1Ng==" \
+  "http://127.0.0.1:8000/realtime/v1/websocket?apikey=$ANON&vsn=1.0.0" | head -1
+```
+
+Run the same command on another device with your project URL in place of `http://127.0.0.1:8000` to test the whole path through your proxy.
+
+**Sync is instant but there are no cursors or presence badges.** The private live channel rules are probably missing, usually because the setup SQL ran before Realtime was ready (see [step 6](#step-6-set-up-the-database)). When a device can't join a private channel, the plugin switches to a public channel for the rest of that session and logs `private live channels aren't set up on this project, using public ones` in the developer console. Devices on different kinds of channel can't see each other. Run the setup SQL again, then fully quit and reopen Obsidian on every device (on iPhone, swipe it away in the app switcher). Also check that **Live editing** and **Show other cursors** are on in the plugin settings.
+
+**A container keeps restarting (lite setup).** It's probably hitting its memory cap. `docker stats --no-stream` shows usage next to each limit. Raise that container's `mem_limit` in `docker-compose.lite.yml` and run `docker compose up -d`.
+
+**"Port is already allocated" when starting.** Something else on the server uses port 8000. Set `API_GW_HTTP_PORT` in `.env` to a free port, for example `8100`, and point your proxy at that port instead.
 
 **Attachments fail to upload.** Raise `FILE_SIZE_LIMIT` (step 4), and check any proxy upload limits (Cloudflare free is 100 MB, nginx defaults to 1 MB until you set `client_max_body_size`).
 

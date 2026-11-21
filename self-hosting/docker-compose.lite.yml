@@ -1,0 +1,52 @@
+# docker-compose.lite.yml - a lighter self-hosted Supabase for SupaBase Jump
+#
+# Runs only what the plugin needs and caps each part's memory:
+#   always on:  db, auth, rest, realtime, storage, api-gw (Envoy)   ~0.8 GB idle
+#   on demand:  studio + meta   (docker compose --profile studio up -d studio meta)
+#   never:      imgproxy, edge functions, supavisor pooler
+# The API is published on 127.0.0.1 only, and Postgres is never published.
+#
+# Use it on top of the official file by adding this line to .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.lite.yml
+# Needs Docker Compose 2.24 or newer (for !reset / !override).
+# Checked against Supabase self-hosted v0.8.4 (Envoy gateway).
+
+services:
+  api-gw:
+    depends_on: !reset {}              # don't wait for Studio, which is usually off
+    ports: !override
+      - "127.0.0.1:${API_GW_HTTP_PORT:-8000}:8000/tcp"
+    mem_limit: 256m
+
+  db:
+    mem_limit: 1g
+  auth:
+    mem_limit: 128m
+  rest:
+    mem_limit: 128m
+  realtime:
+    mem_limit: 512m
+  storage:
+    mem_limit: 384m
+    depends_on: !override
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+      FILE_SIZE_LIMIT: 104857600       # 100 MB per attachment; match "Largest file to sync"
+
+  studio:
+    profiles: ["studio"]
+    mem_limit: 768m
+  meta:
+    profiles: ["studio"]
+    mem_limit: 192m
+
+  imgproxy:
+    profiles: ["off"]
+  functions:
+    profiles: ["off"]
+  supavisor:
+    profiles: ["off"]
